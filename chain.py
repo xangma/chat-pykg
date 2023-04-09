@@ -41,12 +41,11 @@ def get_new_chain1(vectorstore, model_selector, k_textbox) -> Chain:
     Follow Up Input: {question}
     Standalone question:"""
 
-    template = """You are an AI assistant for the open source library PyCBC. The documentation is located at https://pycbc.readthedocs.io.
-You are given the following extracted parts of a long document and a question. Provide a conversational answer with a hyperlink to the documentation.
+    template = """You are an AI assistant for various open source libraries.
+You are given the following extracted parts of a long document and a question. Provide a conversational answer to the question.
 You should only use hyperlinks that are explicitly listed as a source in the context. Do NOT make up a hyperlink that is not listed.
-If the question includes a request for code, provide a code block directly from the documentation.
 If you don't know the answer, just say "Hmm, I'm not sure." Don't try to make up an answer.
-If the question is not about PyCBC, politely inform them that you are tuned to only answer questions about PyCBC.
+If the question is not about the package documentation, politely inform them that you are tuned to only answer questions about the package documentationz.
 Question: {question}
 =========
 {context}
@@ -67,7 +66,7 @@ Answer in Markdown:"""
     # memory = ConversationKGMemory(llm=llm, input_key="question", output_key="answer")
     memory = ConversationBufferWindowMemory(input_key="question", output_key="answer", k=5)
     retriever = vectorstore.as_retriever()
-    retriever.search_kwargs = {"k": k_textbox}
+    retriever.search_kwargs = {"k": int(k_textbox)}
     qa = ConversationalRetrievalChain(
         retriever=retriever, memory=memory, combine_docs_chain=doc_chain, question_generator=question_generator)
 

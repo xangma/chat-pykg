@@ -6,3 +6,4 @@ Flask
 transformers
 gradio
 chromadb
+sentence_transformers

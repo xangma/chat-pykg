@@ -1,5 +1,5 @@
 ---
-title: Chat PyCBC
+title: Package Docs Assistant
 emoji: 🦀
 colorFrom: yellow
 colorTo: indigo
