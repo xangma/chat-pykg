@@ -3,6 +3,7 @@ import os
 import gradio as gr
 from abc import ABC
 from typing import List, Optional, Any
+import asyncio
 import chromadb
 import langchain
 # logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -13,98 +14,13 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTex
 from langchain.document_loaders import TextLoader
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
-from langchain.vectorstores import Chroma
 
 from chain import get_new_chain1
 from ingest import ingest_docs
 
-class CachedChroma(Chroma, ABC):
-    """
-    Wrapper around Chroma to make caching embeddings easier.
-    
-    It automatically uses a cached version of a specified collection, if available.
-        Example:
-            .. code-block:: python
-                    from langchain.vectorstores import Chroma
-                    from langchain.embeddings.openai import OpenAIEmbeddings
-                    embeddings = OpenAIEmbeddings()
-                    vectorstore = CachedChroma.from_documents_with_cache(
-                        ".persisted_data", texts, embeddings, collection_name="fun_experiment"
-                    )
-        """
-    
-    @classmethod
-    def from_documents_with_cache(
-            cls,
-            persist_directory: str,
-            documents: List[Document],
-            embedding: Optional[Embeddings] = None,
-            ids: Optional[List[str]] = None,
-            collection_name: str = Chroma._LANGCHAIN_DEFAULT_COLLECTION_NAME,
-            client_settings: Optional[chromadb.config.Settings] = None,
-            **kwargs: Any,
-    ) -> Chroma:
-        settings = chromadb.config.Settings(
-            chroma_db_impl="duckdb+parquet",
-            persist_directory=persist_directory
-        )
-        client = chromadb.Client(settings)
-        collection_names = [c.name for c in client.list_collections()]
 
-        if collection_name in collection_names:
-            return Chroma(
-                collection_name=collection_name,
-                embedding_function=embedding,
-                persist_directory=persist_directory,
-                client_settings=client_settings,
-            )
-
-        return Chroma.from_documents(
-            documents=documents,
-            embedding=embedding,
-            ids=ids,
-            collection_name=collection_name,
-            persist_directory=persist_directory,
-            client_settings=client_settings,
-            **kwargs
-        )
-
-# def get_docs():
-#     local_repo_path_1 = "pycbc/"
-#     loaders = []
-#     docs = []
-#     for root, dirs, files in os.walk(local_repo_path_1):
-#         for file in files:
-#             file_path = os.path.join(root, file)
-#             rel_file_path = os.path.relpath(file_path, local_repo_path_1)
-#             # Filter by file extension
-#             if any(rel_file_path.endswith(ext) for ext in [".py", ".sh"]):
-#                 # Filter by directory
-#                 if any(rel_file_path.startswith(d) for d in ["pycbc/", "examples/"]):
-#                     docs.append(rel_file_path)
-#             if any(rel_file_path.startswith(d) for d in ["bin/"]):
-#                 docs.append(rel_file_path)
-#     loaders.extend([TextLoader(os.path.join(local_repo_path_1, doc)).load() for doc in docs])
-#     py_splitter = PythonCodeTextSplitter(chunk_size=1000, chunk_overlap=0)
-#     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-#     documents = []
-#     for load in loaders:
-#         try:
-#             if load[0].metadata['source'][-3:] == ".py" == "" or "pycbc/bin/" in load[0].metadata['source']:
-#                 documents.extend(py_splitter.split_documents(load))
-#         except Exception as e:
-#             documents.extend(text_splitter.split_documents(load))
-#     return documents
 
 def set_chain_up(openai_api_key, model_selector, k_textbox, vectorstore, agent):
-
-    # # set defaults
-    # if not model_selector:
-    #     model_selector = "gpt-3.5-turbo"
-    # if not k_textbox:
-    #     k_textbox = 10
-    # else:
-    #     k_textbox = int(k_textbox)
     if type(vectorstore) != list: 
         if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
             if openai_api_key:
@@ -196,20 +112,20 @@ with block:
     submit_urls.click(get_vectorstore, inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, vs_state, agent_state], outputs=[vs_state, agent_state])
 
     # I need to also parse this code in the docstore so I can ask it to fix silly things like this below:
-    openai_api_key_textbox.change(
-        set_chain_up,
-        inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
-        outputs=[agent_state],
-    )
-    model_selector.change(
-        set_chain_up,
-        inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
-        outputs=[agent_state],
-    )
-    k_textbox.change(
-        set_chain_up,
-        inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
-        outputs=[agent_state],
-    )
+    # openai_api_key_textbox.change(
+    #     set_chain_up,
+    #     inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
+    #     outputs=[agent_state],
+    # )
+    # model_selector.change(
+    #     set_chain_up,
+    #     inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
+    #     outputs=[agent_state],
+    # )
+    # k_textbox.change(
+    #     set_chain_up,
+    #     inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
+    #     outputs=[agent_state],
+    # )
 
 block.launch(debug=True)

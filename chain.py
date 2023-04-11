@@ -42,15 +42,15 @@ def get_new_chain1(vectorstore, model_selector, k_textbox) -> Chain:
     Standalone question:"""
 
     template = """You are an AI assistant for various open source libraries.
-You are given the following extracted parts of a long document and a question. Provide a conversational answer to the question.
-You should only use hyperlinks that are explicitly listed as a source in the context. Do NOT make up a hyperlink that is not listed.
-If you don't know the answer, just say "Hmm, I'm not sure." Don't try to make up an answer.
-If the question is not about the package documentation, politely inform them that you are tuned to only answer questions about the package documentationz.
-Question: {question}
-=========
-{context}
-=========
-Answer in Markdown:"""
+    You are given the following extracted parts of a long document and a question. Provide a conversational answer to the question.
+    You should only use hyperlinks that are explicitly listed as a source in the context. Do NOT make up a hyperlink that is not listed.
+    If you don't know the answer, just say "Hmm, I'm not sure." Don't try to make up an answer.
+    If the question is not about the package documentation, politely inform them that you are tuned to only answer questions about the package documentationz.
+    Question: {question}
+    =========
+    {context}
+    =========
+    Answer in Markdown:"""
 
     # Construct a ChatVectorDBChain with a streaming llm for combine docs
     # and a separate, non-streaming llm for question generation
