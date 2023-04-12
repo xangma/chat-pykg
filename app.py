@@ -1,20 +1,13 @@
+# chat-pykg/app.py
 import datetime
 import os
 import gradio as gr
-from abc import ABC
-from typing import List, Optional, Any
-import asyncio
-import langchain
 import chromadb
 from chromadb.config import Settings
 # logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 # logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter, PythonCodeTextSplitter
-from langchain.document_loaders import TextLoader
 from langchain.docstore.document import Document
-from langchain.embeddings.base import Embeddings
 import shutil
 import random, string
 from chain import get_new_chain1

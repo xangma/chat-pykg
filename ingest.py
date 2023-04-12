@@ -1,22 +1,14 @@
-import pickle
+# chat-pykg/ingest.py
 import tempfile
 from langchain.document_loaders import SitemapLoader, ReadTheDocsLoader, TextLoader
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter, PythonCodeTextSplitter, MarkdownTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter, PythonCodeTextSplitter, MarkdownTextSplitter
 from langchain.vectorstores.faiss import FAISS
-import chromadb
 import os
 from langchain.vectorstores import Chroma
 import shutil
 from pathlib import Path
 import subprocess
-import tarfile
-# import chromadb
-from abc import ABC
-from typing import List, Optional, Any
-from langchain.docstore.document import Document
-from langchain.embeddings.base import Embeddings
-from chromadb.config import Settings
 
 # class CachedChroma(Chroma, ABC):
 #     """
