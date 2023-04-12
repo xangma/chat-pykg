@@ -4,44 +4,87 @@ import gradio as gr
 from abc import ABC
 from typing import List, Optional, Any
 import asyncio
-import chromadb
 import langchain
+import chromadb
+from chromadb.config import Settings
 # logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 # logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter, PythonCodeTextSplitter
 from langchain.document_loaders import TextLoader
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
-
+import shutil
+import random, string
 from chain import get_new_chain1
-from ingest import ingest_docs
+from ingest import ingest_docs, CachedChroma
 
-
+def randomword(length):
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(length))
 
 def set_chain_up(openai_api_key, model_selector, k_textbox, vectorstore, agent):
-    if type(vectorstore) != list: 
+    if vectorstore == None: 
+        return 'no_vectorstore'
+    if vectorstore != None: 
         if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
             if openai_api_key:
                 os.environ["OPENAI_API_KEY"] = openai_api_key
                 qa_chain = get_new_chain1(vectorstore, model_selector, k_textbox)
                 os.environ["OPENAI_API_KEY"] = ""
                 return qa_chain
+            else:
+                return 'no_open_aikey'
         else:
             qa_chain = get_new_chain1(vectorstore, model_selector, k_textbox)
             return qa_chain
 
-def get_vectorstore(openai_api_key_textbox, model_selector, k_textbox, packagedocslist, vs_state, agent_state):
-    vectorstore = ingest_docs(packagedocslist)
-    agent_state = set_chain_up(openai_api_key_textbox, model_selector, k_textbox, vectorstore, agent_state)
-    return vectorstore, agent_state
+def get_vectorstore(chat_state, collection_textbox, vs_state):
+    embeddings = HuggingFaceEmbeddings()
+    vectorstore = CachedChroma.from_documents_with_cache(persist_directory=".persisted_data", documents=None, embedding = embeddings, collection_name=collection_textbox)
+    return vectorstore
+
+def make_vectorstore(chat_state,collection_name, packagedocslist, vs_state):
+    vectorstore = ingest_docs(collection_name, packagedocslist)
+    return vectorstore
+
+def delete_vs(chat_state, collection_textbox):
+    client = chromadb.Client(Settings(
+        chroma_db_impl="duckdb+parquet",
+        persist_directory=".persisted_data" # Optional, defaults to .chromadb/ in the current directory
+    ))
+    client.delete_collection(collection_textbox)
+
+def delete_all_vs(chat_state):
+    shutil.rmtree(".persisted_data")
+    return "all_vs_deleted"
+
+def get_all_vs_names(chat_state):
+    client = chromadb.Client(Settings(
+        chroma_db_impl="duckdb+parquet",
+        persist_directory=".persisted_data" # Optional, defaults to .chromadb/ in the current directory
+    ))
+    collection_names = [c.name for c in client.list_collections()]
+    # print the collection names to the chatbot
+    return collection_names, "all_collections"
 
 def chat(inp, history, agent):
     history = history or []
-    if agent is None:
-        history.append((inp, "Please paste your OpenAI key to use"))
-        return history, history
+    if type(agent) == str:
+        if agent == 'no_open_aikey':
+            history.append((inp, "Please paste your OpenAI key to use"))
+            return history, history
+        if agent == 'no_vectorstore':
+            history.append((inp, "Please ingest some package docs to use"))
+            return history, history
+        if agent == 'all_collections' and inp != []:
+            history.append(("", f"Current vectorstores: {inp}"))
+            return history, history
+        if agent == 'all_vs_deleted':
+            history.append((inp, "All vectorstores deleted"))
+            return history, history
+
     print("\n==== date/time: " + str(datetime.datetime.now()) + " ====")
     print("inp: " + inp)
     history = history or []
@@ -51,7 +94,7 @@ def chat(inp, history, agent):
     print(history)
     return history, history
 
-block = gr.Blocks(css=".gradio-container {background-color: lightgray}")
+block = gr.Blocks(css=".gradio-container {background-color: system;}")
 
 with block:
     with gr.Row():
@@ -81,8 +124,21 @@ with block:
         )
         submit = gr.Button(value="Send", variant="secondary").style(full_width=False)
     with gr.Row():
-        packagedocslist = gr.List(headers=['Package Docs URL'], label='Package docs URLs', show_label=True, interactive=True, max_cols=1, max_rows=5)
-        submit_urls = gr.Button(value="Get docs", variant="secondary").style(full_width=False)
+        with gr.Column(scale=4):
+            packagedocslist = gr.List(headers=['Package Docs URL'],row_count=5, label='Package docs URLs', show_label=True, interactive=True, max_cols=1, max_rows=5)
+        with gr.Column(scale=1):
+            randomname = randomword(5)
+            collection_textbox = gr.Textbox(placeholder=randomname,
+            label="Collection name:",
+            show_label=True,
+            lines=1,
+        )
+            collection_textbox.value = randomname
+            get_vs_button = gr.Button(value="Get vectorstore", variant="secondary").style(full_width=False)
+            make_vs_button = gr.Button(value="Make vectorstore", variant="secondary").style(full_width=False)
+            delete_vs_button = gr.Button(value="Delete vectorstore", variant="secondary").style(full_width=False)
+            delete_all_vs_button = gr.Button(value="Delete all vectorstores", variant="secondary").style(full_width=False)
+            get_all_vs_names_button = gr.Button(value="Get all vectorstore names", variant="secondary").style(full_width=False)
 
     gr.Examples(
         examples=[
@@ -103,29 +159,36 @@ with block:
         "<center>Powered by <a href='https://github.com/hwchase17/langchain'>LangChain 🦜️🔗</a></center>"
     )
 
-    state = gr.State()
+    history_state = gr.State()
     agent_state = gr.State()
     vs_state = gr.State()
+    all_collections = gr.State()
+    chat_state = gr.State()
 
-    submit.click(chat, inputs=[message, state, agent_state], outputs=[chatbot, state])
-    message.submit(chat, inputs=[message, state, agent_state], outputs=[chatbot, state])
-    submit_urls.click(get_vectorstore, inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, vs_state, agent_state], outputs=[vs_state, agent_state])
+    submit.click(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
+    message.submit(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
-    # I need to also parse this code in the docstore so I can ask it to fix silly things like this below:
-    # openai_api_key_textbox.change(
-    #     set_chain_up,
-    #     inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
-    #     outputs=[agent_state],
-    # )
-    # model_selector.change(
-    #     set_chain_up,
-    #     inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
-    #     outputs=[agent_state],
-    # )
-    # k_textbox.change(
-    #     set_chain_up,
-    #     inputs=[openai_api_key_textbox, model_selector, k_textbox, packagedocslist, agent_state],
-    #     outputs=[agent_state],
-    # )
+    get_vs_button.click(get_vectorstore, inputs=[chat_state,collection_textbox, vs_state], outputs=[vs_state]).then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state], outputs=[agent_state])
+    make_vs_button.click(make_vectorstore, inputs=[chat_state,collection_textbox, packagedocslist, vs_state], outputs=[vs_state], show_progress=True).then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state], outputs=[agent_state])
+    delete_vs_button.click(delete_vs, inputs=[chat_state,collection_textbox], outputs=[])
+    delete_all_vs_button.click(delete_all_vs, inputs=[chat_state], outputs=[chat_state]).then(chat, inputs=[all_collections, history_state, chat_state], outputs=[chatbot, history_state])
+    get_all_vs_names_button.click(get_all_vs_names, inputs=[chat_state], outputs=[all_collections, chat_state]).then(chat, inputs=[all_collections, history_state, chat_state], outputs=[chatbot, history_state])
+
+    #I need to also parse this code in the docstore so I can ask it to fix silly things like this below:
+    openai_api_key_textbox.change(
+        set_chain_up,
+        inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state],
+        outputs=[agent_state],
+    )
+    model_selector.change(
+        set_chain_up,
+        inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state],
+        outputs=[agent_state],
+    )
+    k_textbox.change(
+        set_chain_up,
+        inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state],
+        outputs=[agent_state],
+    )
 
 block.launch(debug=True)

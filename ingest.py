@@ -4,19 +4,19 @@ from langchain.document_loaders import SitemapLoader, ReadTheDocsLoader, TextLoa
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter, PythonCodeTextSplitter, MarkdownTextSplitter
 from langchain.vectorstores.faiss import FAISS
-import itertools
+import chromadb
 import os
 from langchain.vectorstores import Chroma
 import shutil
 from pathlib import Path
 import subprocess
-from git import Repo, Git
 import tarfile
-import chromadb
+# import chromadb
 from abc import ABC
 from typing import List, Optional, Any
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
+from chromadb.config import Settings
 
 class CachedChroma(Chroma, ABC):
     """
@@ -37,18 +37,18 @@ class CachedChroma(Chroma, ABC):
     def from_documents_with_cache(
             cls,
             persist_directory: str,
-            documents: List[Document],
+            documents: Optional[List[Document]] = None,
             embedding: Optional[Embeddings] = None,
             ids: Optional[List[str]] = None,
             collection_name: str = Chroma._LANGCHAIN_DEFAULT_COLLECTION_NAME,
             client_settings: Optional[chromadb.config.Settings] = None,
             **kwargs: Any,
     ) -> Chroma:
-        settings = chromadb.config.Settings(
+        client_settings = Settings(
             chroma_db_impl="duckdb+parquet",
-            persist_directory=persist_directory
+            persist_directory=persist_directory # Optional, defaults to .chromadb/ in the current directory
         )
-        client = chromadb.Client(settings)
+        client = chromadb.Client(client_settings)
         collection_names = [c.name for c in client.list_collections()]
 
         if collection_name in collection_names:
@@ -58,16 +58,17 @@ class CachedChroma(Chroma, ABC):
                 persist_directory=persist_directory,
                 client_settings=client_settings,
             )
-
-        return Chroma.from_documents(
-            documents=documents,
-            embedding=embedding,
-            ids=ids,
-            collection_name=collection_name,
-            persist_directory=persist_directory,
-            client_settings=client_settings,
-            **kwargs
-        )
+        if documents:
+            return Chroma.from_documents(
+                documents=documents,
+                embedding=embedding,
+                ids=ids,
+                collection_name=collection_name,
+                persist_directory=persist_directory,
+                client_settings=client_settings,
+                **kwargs
+            )
+        raise ValueError("Either documents or collection_name must be specified.")
 
 def get_text(content):
     relevant_part = content.find("div", {"class": "markdown"})
@@ -76,8 +77,7 @@ def get_text(content):
     else:
         return ""
 
-def ingest_docs(urls=[]):
-    """Get documents from web pages."""
+def get_docs(urls):
     cwd = os.getcwd()
     folders=[]
     documents = []                    
@@ -93,8 +93,13 @@ def ingest_docs(urls=[]):
     md_splitter = MarkdownTextSplitter(chunk_size=1000, chunk_overlap=0)
     for url in urls:
         url = url[0]
-        if "local:" in url:
-            folders.append(url.split('local:')[1])
+        if url == '':
+            continue
+        if "." in url:
+            if len(url) > 1:
+                folders.append(url.split('.')[1])
+            else:
+                folders.append('.')
         else:
             destination = Path('downloaded/'+url)
             destination.mkdir(exist_ok=True, parents=True)
@@ -155,13 +160,21 @@ def ingest_docs(urls=[]):
         if ext == "md":
             documents += md_splitter.split_documents(docs_by_ext[ext])
         # else:
-        #     documents += text_splitter.split_documents(docs_by_ext[ext]        
+        #     documents += text_splitter.split_documents(docs_by_ext[ext] 
+    return documents
+
+def ingest_docs(collection_name, urls=[]):
+    """Get documents from web pages."""
+
+    documents = get_docs(urls)
     embeddings = HuggingFaceEmbeddings()
-    vectorstore = FAISS.from_documents(documents, embeddings)
-    # vectorstore = CachedChroma.from_documents_with_cache(".persisted_data", documents, embeddings)
-    # Save vectorstore
-    with open("vectorstore.pkl", "wb") as f:
-        pickle.dump(vectorstore, f)
+    vectorstore = CachedChroma.from_documents_with_cache(persist_directory=".persisted_data", documents=documents, embedding=embeddings, collection_name=collection_name)
+    vectorstore.persist()
+    #vectorstore = FAISS.from_documents(documents, embeddings)
+    # # Save vectorstore
+    # with open("vectorstore.pkl", "wb") as f:
+    #     pickle.dump(vectorstore. , f)
+    
     return vectorstore
     
 

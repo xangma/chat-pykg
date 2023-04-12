@@ -20,7 +20,6 @@ from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_
 from abc import ABC
 from typing import List, Optional, Any
 
-import chromadb
 from langchain.vectorstores import Chroma
 
 def get_new_chain1(vectorstore, model_selector, k_textbox) -> Chain:
@@ -66,7 +65,10 @@ def get_new_chain1(vectorstore, model_selector, k_textbox) -> Chain:
     # memory = ConversationKGMemory(llm=llm, input_key="question", output_key="answer")
     memory = ConversationBufferWindowMemory(input_key="question", output_key="answer", k=5)
     retriever = vectorstore.as_retriever()
-    retriever.search_kwargs = {"k": int(k_textbox)}
+    if len(k_textbox) != 0:
+        retriever.search_kwargs = {"k": int(k_textbox)}
+    else:
+        retriever.search_kwargs = {"k": 10}
     qa = ConversationalRetrievalChain(
         retriever=retriever, memory=memory, combine_docs_chain=doc_chain, question_generator=question_generator)
 
