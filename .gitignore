@@ -1,3 +1,4 @@
+.chroma/*
 .persisted_data/*
 downloaded/*
 __pycache__/*
