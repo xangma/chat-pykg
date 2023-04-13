@@ -14,7 +14,6 @@ from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT, QA_PROMPT
 
 def get_new_chain1(vectorstore, model_selector, k_textbox, max_tokens_textbox) -> Chain:
-    max_tokens_dict = {'gpt-4': 2000, 'gpt-3.5-turbo': 1000}
 
     if model_selector in ['gpt-4', 'gpt-3.5-turbo']:
         llm = ChatOpenAI(client = None, temperature=0.7, model_name=model_selector)

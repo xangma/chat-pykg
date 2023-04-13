@@ -42,7 +42,7 @@ def merge_collections(collection_load_names, vs_state):
     return merged_vectorstore
 
 def set_chain_up(openai_api_key, model_selector, k_textbox, max_tokens_textbox, vectorstore, agent):
-    if agent == None or type(agent) == str: 
+    if not agent or type(agent) == str: 
         if vectorstore != None:
             if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
                 if openai_api_key:
