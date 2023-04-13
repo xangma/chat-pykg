@@ -186,7 +186,7 @@ with block:
                             lines=1,
                         )
                         chunk_size_textbox.value = "1000"
-                        chunk_overlap_textbox.value = "1000"
+                        chunk_overlap_textbox.value = "0"
                     with gr.Row():
                         gr.HTML('<center>See the <a href=https://python.langchain.com/en/latest/reference/modules/text_splitter.html>Langchain textsplitter docs</a></center>')
                 with gr.Column(scale=2):
