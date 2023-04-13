@@ -95,7 +95,7 @@ def ingest_docs(all_collections_state, urls):
             else:
                 folder = '.'
         else:
-            destination = Path('downloaded/'+url)
+            destination = os.path.join('downloaded',url)
             destination.mkdir(exist_ok=True, parents=True)
             destination = destination.as_posix()
             if url[0] == '/':
@@ -136,14 +136,15 @@ def ingest_docs(all_collections_state, urls):
                 file_path = os.path.join(root, file)
                 rel_file_path = os.path.relpath(file_path, local_repo_path_1)
                 ext = rel_file_path.split('.')[-1]
+                if rel_file_path.startswith('.'):
+                    continue
                 try:
-                    if '.' not in [i[0] for i in rel_file_path.split('/')]:
-                        if paths_by_ext.get(rel_file_path.split('.')[-1]) is None:
-                            paths_by_ext["other"].append(rel_file_path)
-                            docs_by_ext["other"].append(TextLoader(os.path.join(local_repo_path_1, rel_file_path)).load()[0])
-                        else:
-                            paths_by_ext[ext].append(rel_file_path)
-                            docs_by_ext[ext].append(TextLoader(os.path.join(local_repo_path_1, rel_file_path)).load()[0])
+                    if paths_by_ext.get(rel_file_path.split('.')[-1]) is None:
+                        paths_by_ext["other"].append(rel_file_path)
+                        docs_by_ext["other"].append(TextLoader(os.path.join(local_repo_path_1, rel_file_path)).load()[0])
+                    else:
+                        paths_by_ext[ext].append(rel_file_path)
+                        docs_by_ext[ext].append(TextLoader(os.path.join(local_repo_path_1, rel_file_path)).load()[0])
                 except Exception as e:
                     continue
         for ext in docs_by_ext.keys():

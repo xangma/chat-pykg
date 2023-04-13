@@ -60,7 +60,7 @@ def set_chain_up(openai_api_key, model_selector, k_textbox, max_tokens_textbox, 
     else:
         return agent
 
-def delete_vs(all_collections_state, collections_viewer):
+def delete_collection(all_collections_state, collections_viewer):
     client = chromadb.Client(Settings(
         chroma_db_impl="duckdb+parquet",
         persist_directory=".persisted_data" # Optional, defaults to .chromadb/ in the current directory
@@ -68,9 +68,10 @@ def delete_vs(all_collections_state, collections_viewer):
     for collection in collections_viewer:
         client.delete_collection(collection)
         all_collections_state.remove(collection)
-    return all_collections_state
+        collections_viewer.remove(collection)
+    return all_collections_state, collections_viewer
 
-def delete_all_vs(all_collections_state):
+def delete_all_collections(all_collections_state):
     shutil.rmtree(".persisted_data")
     return []
 
@@ -105,14 +106,14 @@ def chat(inp, history, agent):
         if agent == 'all_vs_deleted':
             history.append((inp, "All vectorstores deleted"))
             return history, history
-
-    print("\n==== date/time: " + str(datetime.datetime.now()) + " ====")
-    print("inp: " + inp)
-    history = history or []
-    output = agent({"question": inp, "chat_history": history})
-    answer = output["answer"]
-    history.append((inp, answer))
-    print(history)
+    else:
+        print("\n==== date/time: " + str(datetime.datetime.now()) + " ====")
+        print("inp: " + inp)
+        history = history or []
+        output = agent({"question": inp, "chat_history": history})
+        answer = output["answer"]
+        history.append((inp, answer))
+        print(history)
     return history, history
 
 block = gr.Blocks(css=".gradio-container {background-color: system;}")
@@ -170,14 +171,14 @@ with block:
             with gr.Row():
                 with gr.Column(scale=2):
                     all_collections_to_get = gr.List(headers=['New Collections to make'],row_count=3, label='Collections_to_get', show_label=True, interactive=True, max_cols=1, max_rows=3)
-                    make_vs_button = gr.Button(value="Make new collection(s)", variant="secondary").style(full_width=False)
+                    make_collections_button = gr.Button(value="Make new collection(s)", variant="secondary").style(full_width=False)
                 with gr.Column(scale=2):
                     collections_viewer = gr.CheckboxGroup(choices=[], label='Collections_viewer', show_label=True)
                 with gr.Column(scale=1):
-                    get_vs_button = gr.Button(value="Load collection(s) to chat!", variant="secondary").style(full_width=False)
-                    get_all_vs_names_button = gr.Button(value="List all saved collections", variant="secondary").style(full_width=False)
-                    delete_vs_button = gr.Button(value="Delete selected saved collections", variant="secondary").style(full_width=False)
-                    delete_all_vs_button = gr.Button(value="Delete all saved collections", variant="secondary").style(full_width=False)
+                    load_collections_button = gr.Button(value="Load collection(s) to chat!", variant="secondary").style(full_width=False)
+                    get_all_collection_names_button = gr.Button(value="List all saved collections", variant="secondary").style(full_width=False)
+                    delete_collections_button = gr.Button(value="Delete selected saved collections", variant="secondary").style(full_width=False)
+                    delete_all_collections_button = gr.Button(value="Delete all saved collections", variant="secondary").style(full_width=False)
         gr.HTML(
             "<center>Powered by <a href='https://github.com/hwchase17/langchain'>LangChain 🦜️🔗</a></center>"
         )
@@ -191,11 +192,11 @@ with block:
         submit.click(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
         message.submit(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
-        get_vs_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state])#.then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
-        make_vs_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get], outputs=[all_collections_state], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        delete_vs_button.click(delete_vs, inputs=[all_collections_state, collections_viewer], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        delete_all_vs_button.click(delete_all_vs, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        get_all_vs_names_button.click(list_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        load_collections_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state])#.then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
+        make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get], outputs=[all_collections_state], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        get_all_collection_names_button.click(list_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         
         # Whenever chain parameters change, destroy the agent. 
         input_list = [openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox]
