@@ -20,7 +20,7 @@ def randomword(length):
 def change_tab():
     return gr.Tabs.update(selected=0)
 
-def merge_collections(collection_load_names, vs_state, tabs): 
+def merge_collections(collection_load_names, vs_state): 
     merged_documents = [] 
     merged_embeddings = []
     client = chromadb.Client(Settings(
@@ -39,7 +39,7 @@ def merge_collections(collection_load_names, vs_state, tabs):
             merged_embeddings.append(collection['embeddings'][i])
     merged_collection_name = "merged_collection" 
     merged_vectorstore = Chroma.from_documents(documents=merged_documents, embeddings=merged_embeddings, collection_name=merged_collection_name) 
-    return merged_vectorstore, gr.Tabs.update(selected=0)
+    return merged_vectorstore
 
 def set_chain_up(openai_api_key, model_selector, k_textbox, vectorstore, agent):
     if vectorstore == None: 
