@@ -20,7 +20,7 @@ def randomword(length):
 def change_tab():
     return gr.Tabs.update(selected=0)
 
-def merge_collections(collection_load_names, vs_state): 
+def merge_collections(collection_load_names, vs_state, tabs): 
     merged_documents = [] 
     merged_embeddings = []
     client = chromadb.Client(Settings(
@@ -39,7 +39,7 @@ def merge_collections(collection_load_names, vs_state):
             merged_embeddings.append(collection['embeddings'][i])
     merged_collection_name = "merged_collection" 
     merged_vectorstore = Chroma.from_documents(documents=merged_documents, embeddings=merged_embeddings, collection_name=merged_collection_name) 
-    return merged_vectorstore
+    return merged_vectorstore, gr.Tabs.update(selected=0)
 
 def set_chain_up(openai_api_key, model_selector, k_textbox, vectorstore, agent):
     if vectorstore == None: 
@@ -140,7 +140,7 @@ with block:
                 submit = gr.Button(value="Send", variant="secondary").style(full_width=False)
             gr.Examples(
                 examples=[
-                    "What is this code and why hasn't the developer documented it?",
+                    "What does this code do?",
                     "Where is this specific method in the source code and why is it broken?"
                 ],
                 inputs=message,
@@ -153,16 +153,12 @@ with block:
             The model's memory is set to 5 messages, but I haven't tested with gpt-3.5-turbo yet to see if it works well. It seems to work well with gpt-4."""
             )
         with gr.TabItem("Collections manager", id=1):
-            #with gr.Row():
-                    #collection_load_list = gr.List(headers=['Collection Loader'],row_count=5, label='Package docs URLs', show_label=True, interactive=True, max_cols=1, max_rows=5)
-                    
             with gr.Row():
                 with gr.Column(scale=2):
                     all_collections_to_get = gr.List(headers=['New Collections to make'],row_count=3, label='Collections_to_get', show_label=True, interactive=True, max_cols=1, max_rows=3)
                     make_vs_button = gr.Button(value="Make new collection(s)", variant="secondary").style(full_width=False)
                 with gr.Column(scale=2):
                     collections_viewer = gr.CheckboxGroup(choices=[], label='Collections_viewer', show_label=True)
-                    #all_collections_viewer = gr.List(headers=['Existing Collections Viewer'],row_count=7, label='Collections_viewer', show_label=True, max_cols=1)
                 with gr.Column(scale=1):
                     get_vs_button = gr.Button(value="Load collection(s) to chat!", variant="secondary").style(full_width=False)
                     get_all_vs_names_button = gr.Button(value="List all saved collections", variant="secondary").style(full_width=False)
@@ -181,7 +177,7 @@ with block:
         submit.click(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
         message.submit(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
-        get_vs_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state]).then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state], outputs=[agent_state]).then(change_tab, None, tabs)
+        get_vs_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state]).then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state], outputs=[agent_state, tabs])
         make_vs_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get], outputs=[all_collections_state], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_vs_button.click(delete_vs, inputs=[all_collections_state, collections_viewer], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_vs_button.click(delete_all_vs, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
