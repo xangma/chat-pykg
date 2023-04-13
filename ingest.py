@@ -95,7 +95,7 @@ def ingest_docs(all_collections_state, urls):
             else:
                 folder = '.'
         else:
-            destination = os.path.join('downloaded',url)
+            destination = Path(os.path.join('downloaded',url))
             destination.mkdir(exist_ok=True, parents=True)
             destination = destination.as_posix()
             if url[0] == '/':
