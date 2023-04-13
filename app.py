@@ -172,6 +172,23 @@ with block:
                 with gr.Column(scale=2):
                     all_collections_to_get = gr.List(headers=['New Collections to make'],row_count=3, label='Collections_to_get', show_label=True, interactive=True, max_cols=1, max_rows=3)
                     make_collections_button = gr.Button(value="Make new collection(s)", variant="secondary").style(full_width=False)
+                    with gr.Row():
+                        chunk_size_textbox = gr.Textbox(
+                            placeholder="Chunk size",
+                            label="Chunk size",
+                            show_label=True,
+                            lines=1,
+                        )
+                        chunk_overlap_textbox = gr.Textbox(
+                            placeholder="Chunk overlap",
+                            label="Chunk overlap",
+                            show_label=True,
+                            lines=1,
+                        )
+                        chunk_size_textbox.value = "1000"
+                        chunk_overlap_textbox.value = "1000"
+                    with gr.Row():
+                        gr.HTML('<center>See the <a href=https://python.langchain.com/en/latest/reference/modules/text_splitter.html>Langchain textsplitter docs</a></center>')
                 with gr.Column(scale=2):
                     collections_viewer = gr.CheckboxGroup(choices=[], label='Collections_viewer', show_label=True)
                 with gr.Column(scale=1):
@@ -193,7 +210,7 @@ with block:
         message.submit(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
         load_collections_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state])#.then(change_tab, None, tabs) #.then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
-        make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get], outputs=[all_collections_state], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox], outputs=[all_collections_state], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         get_all_collection_names_button.click(list_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])

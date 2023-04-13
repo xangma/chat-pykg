@@ -69,7 +69,7 @@ def get_text(content):
     else:
         return ""
 
-def ingest_docs(all_collections_state, urls):
+def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap):
     """Get documents from web pages."""
     all_docs = []
 
@@ -77,9 +77,9 @@ def ingest_docs(all_collections_state, urls):
     documents = []                    
     shutil.rmtree('downloaded/', ignore_errors=True)
     known_exts = ["py", "md"]
-    py_splitter = PythonCodeTextSplitter(chunk_size=1000, chunk_overlap=0)
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    md_splitter = MarkdownTextSplitter(chunk_size=1000, chunk_overlap=0)
+    py_splitter = PythonCodeTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
+    md_splitter = MarkdownTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
     for url in urls:
         paths_by_ext = {}
         docs_by_ext = {}
@@ -131,6 +131,8 @@ def ingest_docs(all_collections_state, urls):
                     res = subprocess.run(["cp", "-r", (temp_path / folder).as_posix(), '/'.join(destination.split('/')[:-1])])
                     folder = destination
         local_repo_path_1 = folder
+        if local_repo_path_1 == '.':
+            local_repo_path_1 = os.getcwd()
         for root, dirs, files in os.walk(local_repo_path_1):
             for file in files:
                 file_path = os.path.join(root, file)
