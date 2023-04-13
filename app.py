@@ -41,21 +41,24 @@ def merge_collections(collection_load_names, vs_state):
     merged_vectorstore = Chroma.from_documents(documents=merged_documents, embeddings=merged_embeddings, collection_name=merged_collection_name) 
     return merged_vectorstore
 
-def set_chain_up(openai_api_key, model_selector, k_textbox, vectorstore, agent):
-    if vectorstore == None: 
-        return 'no_vectorstore'
-    if vectorstore != None: 
-        if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
-            if openai_api_key:
-                os.environ["OPENAI_API_KEY"] = openai_api_key
-                qa_chain = get_new_chain1(vectorstore, model_selector, k_textbox)
-                os.environ["OPENAI_API_KEY"] = ""
-                return qa_chain
+def set_chain_up(openai_api_key, model_selector, k_textbox, max_tokens_textbox, vectorstore, agent):
+    if agent == None or type(agent) == str: 
+        if vectorstore != None:
+            if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
+                if openai_api_key:
+                    os.environ["OPENAI_API_KEY"] = openai_api_key
+                    qa_chain = get_new_chain1(vectorstore, model_selector, k_textbox, max_tokens_textbox)
+                    os.environ["OPENAI_API_KEY"] = ""
+                    return qa_chain
+                else:
+                    return 'no_open_aikey'
             else:
-                return 'no_open_aikey'
+                qa_chain = get_new_chain1(vectorstore, model_selector, k_textbox, max_tokens_textbox)
+                return qa_chain
         else:
-            qa_chain = get_new_chain1(vectorstore, model_selector, k_textbox)
-            return qa_chain
+            return 'no_vectorstore'
+    else:
+        return agent
 
 def delete_vs(all_collections_state, collections_viewer):
     client = chromadb.Client(Settings(
@@ -82,6 +85,10 @@ def list_collections(all_collections_state):
 def update_checkboxgroup(all_collections_state):
     new_options = [i for i in all_collections_state]
     return gr.CheckboxGroup.update(choices=new_options)
+
+def destroy_agent(agent):
+    agent = None
+    return agent
 
 def chat(inp, history, agent):
     history = history or []
@@ -129,7 +136,14 @@ with block:
                     show_label=True,
                     lines=1,
                 )
-                k_textbox.value = "10"
+                k_textbox.value = "20"
+                max_tokens_textbox = gr.Textbox(
+                    placeholder="max_tokens: Maximum number of tokens to generate",
+                    label="max_tokens",
+                    show_label=True,
+                    lines=1,
+                )
+                max_tokens_textbox.value="2000"
             chatbot = gr.Chatbot()
             with gr.Row():
                 message = gr.Textbox(
@@ -174,31 +188,24 @@ with block:
         all_collections_state = gr.State()
         chat_state = gr.State()
 
-        submit.click(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
+        submit.click(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
         message.submit(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
-        get_vs_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state]).then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state], outputs=[agent_state, tabs])
+        get_vs_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state])#.then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
         make_vs_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get], outputs=[all_collections_state], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_vs_button.click(delete_vs, inputs=[all_collections_state, collections_viewer], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_vs_button.click(delete_all_vs, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         get_all_vs_names_button.click(list_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         
-        #I need to also parse this code in the docstore so I can ask it to fix silly things like this below:
-        openai_api_key_textbox.change(
-            set_chain_up,
-            inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state],
-            outputs=[agent_state],
-        )
-        model_selector.change(
-            set_chain_up,
-            inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state],
-            outputs=[agent_state],
-        )
-        k_textbox.change(
-            set_chain_up,
-            inputs=[openai_api_key_textbox, model_selector, k_textbox, vs_state, agent_state],
-            outputs=[agent_state],
-        )
+        # Whenever chain parameters change, destroy the agent. 
+        input_list = [openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox]
+        output_list = [agent_state]
+        for input_item in input_list:
+            input_item.change(
+                destroy_agent,
+                inputs=output_list,
+                outputs=output_list,
+            )
         all_collections_state.value = list_collections(all_collections_state)
         block.load(update_checkboxgroup, inputs = all_collections_state, outputs = collections_viewer)
 block.launch(debug=True)

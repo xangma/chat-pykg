@@ -72,7 +72,7 @@ def get_text(content):
 def ingest_docs(all_collections_state, urls):
     """Get documents from web pages."""
     all_docs = []
-    local = False
+
     folders=[]
     documents = []                    
     shutil.rmtree('downloaded/', ignore_errors=True)
@@ -90,7 +90,6 @@ def ingest_docs(all_collections_state, urls):
         if url == '':
             continue
         if "." in url:
-            local = True
             if len(url) > 1:
                 folder = url.split('.')[1]
             else:

@@ -13,12 +13,12 @@ from langchain.callbacks.base import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT, QA_PROMPT
 
-def get_new_chain1(vectorstore, model_selector, k_textbox) -> Chain:
+def get_new_chain1(vectorstore, model_selector, k_textbox, max_tokens_textbox) -> Chain:
     max_tokens_dict = {'gpt-4': 2000, 'gpt-3.5-turbo': 1000}
 
     if model_selector in ['gpt-4', 'gpt-3.5-turbo']:
         llm = ChatOpenAI(client = None, temperature=0.7, model_name=model_selector)
-        doc_chain_llm = ChatOpenAI(client = None, streaming=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]), verbose=True, temperature=0.7, model_name=model_selector, max_tokens=max_tokens_dict[model_selector])
+        doc_chain_llm = ChatOpenAI(client = None, streaming=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]), verbose=True, temperature=0.7, model_name=model_selector, max_tokens=int(max_tokens_textbox))
     if model_selector == 'other':
         llm = HuggingFaceHub(repo_id="chavinlo/gpt4-x-alpaca")#, model_kwargs={"temperature":0, "max_length":64})
         doc_chain_llm = HuggingFaceHub(repo_id="chavinlo/gpt4-x-alpaca")
