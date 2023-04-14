@@ -9,6 +9,9 @@ from langchain.vectorstores import Chroma
 import shutil
 from pathlib import Path
 import subprocess
+import chromadb
+from chromadb.config import Settings
+import chromadb.utils.embedding_functions as ef
 
 # class CachedChroma(Chroma, ABC):
 #     """
@@ -72,7 +75,6 @@ def get_text(content):
 def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap):
     """Get documents from web pages."""
     all_docs = []
-
     folders=[]
     documents = []                    
     shutil.rmtree('downloaded/', ignore_errors=True)
@@ -157,13 +159,12 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap):
             # else:
             #     documents += text_splitter.split_documents(docs_by_ext[ext] 
         all_docs += documents
-        embeddings = HuggingFaceEmbeddings()
         if 'downloaded/' in folder:
             folder = '-'.join(folder.split('/')[1:])
         if folder == '.':
             folder = 'chat-pykg'
-        vectorstore = Chroma.from_documents(persist_directory=".persisted_data", documents=documents, embedding=embeddings, collection_name=folder)
-        vectorstore.persist()
+        collection = Chroma.from_documents(documents=documents, collection_name=folder, embedding=HuggingFaceEmbeddings(), persist_directory=".persisted_data")
+        collection.persist()
         all_collections_state.append(folder)
     return all_collections_state
     # embeddings = HuggingFaceEmbeddings()

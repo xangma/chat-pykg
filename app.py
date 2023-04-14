@@ -1,17 +1,22 @@
 # chat-pykg/app.py
 import datetime
 import os
-import gradio as gr
-import chromadb
-from chromadb.config import Settings
-# logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-# logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-from langchain.vectorstores import Chroma
-from langchain.docstore.document import Document
+import random
 import shutil
-import random, string
+import string
+
+import chromadb
+import gradio as gr
+from chromadb.config import Settings
+from langchain.docstore.document import Document
+from langchain.embeddings import HuggingFaceEmbeddings, OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+
 from chain import get_new_chain1
 from ingest import ingest_docs
+
+# logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+# logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
 def randomword(length):
     letters = string.ascii_lowercase
@@ -23,22 +28,21 @@ def change_tab():
 def merge_collections(collection_load_names, vs_state): 
     merged_documents = [] 
     merged_embeddings = []
-    client = chromadb.Client(Settings(
-        chroma_db_impl="duckdb+parquet",
-        persist_directory=".persisted_data" # Optional, defaults to .chromadb/ in the current directory
-    ))
-    
     for collection_name in collection_load_names: 
-        collection_name = collection_name
+        chroma_obj_get = chromadb.Client(Settings(
+            chroma_db_impl="duckdb+parquet",
+            persist_directory=".persisted_data",
+            anonymized_telemetry = True
+        ))
         if collection_name == '': 
             continue
-        collection = client.get_collection(collection_name)
-        collection = collection.get(include=["metadatas", "documents", "embeddings"])
+        collection_obj = chroma_obj_get.get_collection(collection_name, embedding_function=HuggingFaceEmbeddings())
+        collection = collection_obj.get(include=["metadatas", "documents", "embeddings"])
         for i in range(len(collection['documents'])):
             merged_documents.append(Document(page_content=collection['documents'][i], metadata = collection['metadatas'][i]))
             merged_embeddings.append(collection['embeddings'][i])
-    merged_collection_name = "merged_collection" 
-    merged_vectorstore = Chroma.from_documents(documents=merged_documents, embeddings=merged_embeddings, collection_name=merged_collection_name) 
+    merged_vectorstore = Chroma(collection_name="temp", embedding_function=HuggingFaceEmbeddings())
+    merged_vectorstore.add_documents(documents=merged_documents, embeddings=merged_embeddings)
     return merged_vectorstore
 
 def set_chain_up(openai_api_key, model_selector, k_textbox, max_tokens_textbox, vectorstore, agent):
@@ -66,9 +70,12 @@ def delete_collection(all_collections_state, collections_viewer):
         persist_directory=".persisted_data" # Optional, defaults to .chromadb/ in the current directory
     ))
     for collection in collections_viewer:
-        client.delete_collection(collection)
-        all_collections_state.remove(collection)
-        collections_viewer.remove(collection)
+        try:
+            client.delete_collection(collection)
+            all_collections_state.remove(collection)
+            collections_viewer.remove(collection)
+        except:
+            continue
     return all_collections_state, collections_viewer
 
 def delete_all_collections(all_collections_state):
@@ -90,6 +97,9 @@ def update_checkboxgroup(all_collections_state):
 def destroy_agent(agent):
     agent = None
     return agent
+
+def clear_chat(chatbot, history):
+    return [], []
 
 def chat(inp, history, agent):
     history = history or []
@@ -144,15 +154,16 @@ with block:
                     show_label=True,
                     lines=1,
                 )
-                max_tokens_textbox.value="2000"
+                max_tokens_textbox.value="1000"
             chatbot = gr.Chatbot()
             with gr.Row():
+                clear_btn = gr.Button("Clear Chat", variant="secondary").style(full_width=False)
                 message = gr.Textbox(
                     label="What's your question?",
                     placeholder="What is this code?",
                     lines=1,
                 )
-                submit = gr.Button(value="Send", variant="secondary").style(full_width=False)
+                submit = gr.Button(value="Send").style(full_width=False)
             gr.Examples(
                 examples=[
                     "What does this code do?",
@@ -207,14 +218,14 @@ with block:
         chat_state = gr.State()
 
         submit.click(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
-        message.submit(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
+        message.submit(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
         load_collections_button.click(merge_collections, inputs=[collections_viewer, vs_state], outputs=[vs_state])#.then(change_tab, None, tabs) #.then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
         make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox], outputs=[all_collections_state], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         get_all_collection_names_button.click(list_collections, inputs=[all_collections_state], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        
+        clear_btn.click(clear_chat, inputs = [chatbot, history_state], outputs = [chatbot, history_state])
         # Whenever chain parameters change, destroy the agent. 
         input_list = [openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox]
         output_list = [agent_state]
