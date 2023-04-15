@@ -7,3 +7,4 @@ transformers
 gradio
 chromadb
 sentence_transformers
+python-magic

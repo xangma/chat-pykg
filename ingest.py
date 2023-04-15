@@ -1,8 +1,9 @@
 # chat-pykg/ingest.py
 import tempfile
+import gradio as gr
 from langchain.document_loaders import SitemapLoader, ReadTheDocsLoader, TextLoader
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter, PythonCodeTextSplitter, MarkdownTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter, PythonCodeTextSplitter, MarkdownTextSplitter, TextSplitter
 from langchain.vectorstores.faiss import FAISS
 import os
 from langchain.vectorstores import Chroma
@@ -10,8 +11,12 @@ import shutil
 from pathlib import Path
 import subprocess
 import chromadb
-from chromadb.config import Settings
-import chromadb.utils.embedding_functions as ef
+import magic
+from typing import Any, Dict, Iterable, List, Optional, Type, TypeVar
+from pydantic import Extra, Field, root_validator
+import logging
+logger = logging.getLogger()
+from langchain.docstore.document import Document
 
 # class CachedChroma(Chroma, ABC):
 #     """
@@ -65,6 +70,62 @@ import chromadb.utils.embedding_functions as ef
 #             )
 #         raise ValueError("Either documents or collection_name must be specified.")
 
+def embedding_chooser(embedding_radio):
+    if embedding_radio == "Sentence Transformers":
+        embedding_function = HuggingFaceEmbeddings()
+    elif embedding_radio == "OpenAI":
+        embedding_function = OpenAIEmbeddings()
+    else:
+        embedding_function = HuggingFaceEmbeddings()
+    return embedding_function
+
+# Monkeypatch pending PR
+def _merge_splits(self, splits: Iterable[str], separator: str) -> List[str]:
+    # We now want to combine these smaller pieces into medium size
+    # chunks to send to the LLM.
+    separator_len = self._length_function(separator)
+
+    docs = []
+    current_doc: List[str] = []
+    total = 0
+    for index, d in enumerate(splits):
+        _len = self._length_function(d)
+        if (
+            total + _len + (separator_len if len(current_doc) > 0 else 0)
+            > self._chunk_size
+        ):
+            if total > self._chunk_size:
+                logger.warning(
+                    f"Created a chunk of size {total}, "
+                    f"which is longer than the specified {self._chunk_size}"
+                )
+            if len(current_doc) > 0:
+                doc = self._join_docs(current_doc, separator)
+                if doc is not None:
+                    docs.append(doc)
+                # Keep on popping if:
+                # - we have a larger chunk than in the chunk overlap
+                # - or if we still have any chunks and the length is long
+                while total > self._chunk_overlap or (
+                    total + _len + (separator_len if len(current_doc) > 0 else 0)
+                    > self._chunk_size
+                    and total > 0
+                ):
+                    total -= self._length_function(current_doc[0]) + (
+                        separator_len if len(current_doc) > 1 else 0
+                    )
+                    current_doc = current_doc[1:]
+
+        if index > 0:
+            current_doc.append(separator + d)
+        else:
+            current_doc.append(d)
+        total += _len + (separator_len if len(current_doc) > 1 else 0)
+    doc = self._join_docs(current_doc, separator)
+    if doc is not None:
+        docs.append(doc)
+    return docs
+
 def get_text(content):
     relevant_part = content.find("div", {"class": "markdown"})
     if relevant_part is not None:
@@ -72,83 +133,96 @@ def get_text(content):
     else:
         return ""
 
-def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap):
-    """Get documents from web pages."""
+def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, embedding_radio, debug=False):
+    cleared_list = urls.copy()
+    def sanitize_folder_name(folder_name):
+        if folder_name != '':
+            folder_name = folder_name.strip().rstrip('/')
+        else:
+            folder_name = '.' # current directory
+        return folder_name
+
+    def is_hidden(path):
+        return os.path.basename(path).startswith('.')
+    
+    embedding_function = embedding_chooser(embedding_radio)
     all_docs = []
-    folders=[]
-    documents = []                    
     shutil.rmtree('downloaded/', ignore_errors=True)
     known_exts = ["py", "md"]
+    # Initialize text splitters
     py_splitter = PythonCodeTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
     md_splitter = MarkdownTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
-    for url in urls:
+    py_splitter._merge_splits = _merge_splits.__get__(py_splitter, TextSplitter)
+    # Process input URLs
+    urls = [[url.strip(), [sanitize_folder_name(folder) for folder in url_folders.split(',')]] for url, url_folders in urls]
+    for j in range(len(urls)):
+        orgrepo = urls[j][0]
+        repo_folders = urls[j][1]
+        if orgrepo == '':
+            continue
+        if orgrepo.replace('/','-') in all_collections_state:
+            logging.info(f"Skipping {orgrepo} as it is already in the database")
+            continue
+        documents = []
+        paths = []
         paths_by_ext = {}
         docs_by_ext = {}
         for ext in known_exts + ["other"]:
             docs_by_ext[ext] = []
             paths_by_ext[ext] = []
-        url = url[0]
-        if url == '':
-            continue
-        if "." in url:
-            if len(url) > 1:
-                folder = url.split('.')[1]
-            else:
-                folder = '.'
+        
+        if orgrepo[0] == '/' or orgrepo[0] == '.':
+            # Ingest local folder
+            local_repo_path = sanitize_folder_name(orgrepo[1:])
         else:
-            destination = Path(os.path.join('downloaded',url))
-            destination.mkdir(exist_ok=True, parents=True)
-            destination = destination.as_posix()
-            if url[0] == '/':
-                url = url[1:]
-            org = url.split('/')[0]
-            repo = url.split('/')[1]
+            # Ingest remote git repo
+            org = orgrepo.split('/')[0]
+            repo = orgrepo.split('/')[1]
             repo_url = f"https://github.com/{org}/{repo}.git"
-            # join all strings after 2nd slash
-            folder = '/'.join(url.split('/')[2:])
-            if folder[-1] == '/':
-                folder = folder[:-1]
-            if folder:
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir)
+            local_repo_path = os.path.join('.downloaded', orgrepo) if debug else tempfile.mkdtemp()
 
-                    # Initialize the Git repository
-                    subprocess.run(["git", "init"], cwd=temp_path)
+            # Initialize the Git repository
+            subprocess.run(["git", "init"], cwd=local_repo_path)
+            # Add the remote repository
+            subprocess.run(["git", "remote", "add", "-f", "origin", repo_url], cwd=local_repo_path)
+            # Enable sparse-checkout
+            subprocess.run(["git", "config", "core.sparseCheckout", "true"], cwd=local_repo_path)
+            # Specify the folder to checkout
+            cmd = ["git", "sparse-checkout", "set"] + [i for i in repo_folders]
+            subprocess.run(cmd, cwd=local_repo_path)
+            # Check if branch is called main or master
 
-                    # Add the remote repository
-                    subprocess.run(["git", "remote", "add", "-f", "origin", repo_url], cwd=temp_path)
-
-                    # Enable sparse-checkout
-                    subprocess.run(["git", "config", "core.sparseCheckout", "true"], cwd=temp_path)
-
-                    # Specify the folder to checkout
-                    with open(temp_path / ".git" / "info" / "sparse-checkout", "w") as f:
-                        f.write(f"{folder}/\n")
-
-                    # Checkout the desired branch
-                    res = subprocess.run(["git", "checkout", 'main'], cwd=temp_path)
-                    if res.returncode == 1:
-                        res = subprocess.run(["git", "checkout", "master"], cwd=temp_path)
-                    res = subprocess.run(["cp", "-r", (temp_path / folder).as_posix(), '/'.join(destination.split('/')[:-1])])
-                    folder = destination
-        local_repo_path_1 = folder
-        if local_repo_path_1 == '.':
-            local_repo_path_1 = os.getcwd()
-        for root, dirs, files in os.walk(local_repo_path_1):
+            # Checkout the desired branch
+            res = subprocess.run(["git", "checkout", 'main'], cwd=local_repo_path)
+            if res.returncode == 1:
+                res = subprocess.run(["git", "checkout", "master"], cwd=local_repo_path)
+            #res = subprocess.run(["cp", "-r", (Path(local_repo_path) / repo_folders[i]).as_posix(), '/'.join(destination.split('/')[:-1])])#
+            # Iterate through files and process them
+        if local_repo_path == '.':
+            orgrepo='chat-pykg'
+        for root, dirs, files in os.walk(local_repo_path):
+            dirs[:] = [d for d in dirs if not is_hidden(d)]  # Ignore hidden directories
             for file in files:
-                file_path = os.path.join(root, file)
-                rel_file_path = os.path.relpath(file_path, local_repo_path_1)
-                ext = rel_file_path.split('.')[-1]
-                if rel_file_path.startswith('.'):
+                if is_hidden(file):
                     continue
+                file_path = os.path.join(root, file)
+                rel_file_path = os.path.relpath(file_path, local_repo_path)
                 try:
-                    if paths_by_ext.get(rel_file_path.split('.')[-1]) is None:
-                        paths_by_ext["other"].append(rel_file_path)
-                        docs_by_ext["other"].append(TextLoader(os.path.join(local_repo_path_1, rel_file_path)).load()[0])
+                    if '.' not in rel_file_path:
+                        inferred_filetype = magic.from_file(file_path, mime=True)
+                        if "python" in inferred_filetype or "text/plain" in inferred_filetype:
+                            ext = "py"
+                        else:
+                            ext = "other"
                     else:
-                        paths_by_ext[ext].append(rel_file_path)
-                        docs_by_ext[ext].append(TextLoader(os.path.join(local_repo_path_1, rel_file_path)).load()[0])
+                        ext = rel_file_path.split('.')[-1]
+                    if docs_by_ext.get(ext) is None:
+                        ext = "other" 
+                    doc = TextLoader(os.path.join(local_repo_path, rel_file_path)).load()[0]
+                    doc.metadata["source"] = os.path.join(orgrepo, rel_file_path)
+                    docs_by_ext[ext].append(doc)
+                    paths_by_ext[ext].append(rel_file_path)
                 except Exception as e:
                     continue
         for ext in docs_by_ext.keys():
@@ -157,25 +231,20 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap):
             if ext == "md":
                 documents += md_splitter.split_documents(docs_by_ext[ext])
             # else:
-            #     documents += text_splitter.split_documents(docs_by_ext[ext] 
+            #     documents += text_splitter.split_documents(docs_by_ext[ext]
         all_docs += documents
-        if 'downloaded/' in folder:
-            folder = '-'.join(folder.split('/')[1:])
-        if folder == '.':
-            folder = 'chat-pykg'
-        collection = Chroma.from_documents(documents=documents, collection_name=folder, embedding=HuggingFaceEmbeddings(), persist_directory=".persisted_data")
+        # For each document, add the metadata to the page_content
+        for doc in documents:
+            doc.page_content = f'# source:{doc.metadata["source"]}\n{doc.page_content}'
+        if type(embedding_radio) == gr.Radio:
+            embedding_radio = embedding_radio.value
+        persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
+        collection_name = orgrepo.replace('/','-')
+        collection = Chroma.from_documents(documents=documents, collection_name=collection_name, embedding=embedding_function, persist_directory=persist_directory)
         collection.persist()
-        all_collections_state.append(folder)
-    return all_collections_state
-    # embeddings = HuggingFaceEmbeddings()
-    # merged_vectorstore = Chroma.from_documents(persist_directory=".persisted_data", documents=documents, embedding=embeddings, collection_name='merged_collections')
-    # #vectorstore = FAISS.from_documents(documents, embeddings)
-    # # # Save vectorstore
-    # # with open("vectorstore.pkl", "wb") as f:
-    # #     pickle.dump(vectorstore. , f)
-    
-    # return merged_vectorstore
-    
+        all_collections_state.append(collection_name)
+        cleared_list[j][0], cleared_list[j][1] = '', ''
+    return all_collections_state, gr.update(value=cleared_list)
 
 if __name__ == "__main__":
     ingest_docs()
