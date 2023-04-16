@@ -8,14 +8,12 @@ import string
 import sys
 from pathlib import Path
 import numpy as np
-
 import chromadb
 import gradio as gr
 from chromadb.config import Settings
 from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceEmbeddings, OpenAIEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.retrievers import SVMRetriever
 from chain import get_new_chain1
 from ingest import embedding_chooser, ingest_docs
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -97,14 +95,18 @@ def merge_collections(collection_load_names, vs_state, k_textbox, search_type_se
             #         merged_vectorstore.append(f.readlines())
     return merged_vectorstore
 
-def set_chain_up(openai_api_key, model_selector, k_textbox, search_type_selector, max_tokens_textbox, vectorstore_radio, vectorstore, agent):
+def set_chain_up(openai_api_key, google_api_key, google_cse_id, model_selector, k_textbox, search_type_selector, max_tokens_textbox, vectorstore_radio, vectorstore, agent):
     if not agent or type(agent) == str: 
         if vectorstore != None:
             if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
                 if openai_api_key:
                     os.environ["OPENAI_API_KEY"] = openai_api_key
+                    os.environ["GOOGLE_API_KEY"] = google_api_key
+                    os.environ["GOOGLE_CSE_ID"] = google_cse_id
                     qa_chain = get_new_chain1(vectorstore, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox)
                     os.environ["OPENAI_API_KEY"] = ""
+                    os.environ["GOOGLE_API_KEY"] = ""
+                    os.environ["GOOGLE_CSE_ID"] = ""
                     return qa_chain
                 else:
                     return 'no_open_aikey'
@@ -197,39 +199,7 @@ with block:
     with gr.Tabs() as tabs:
         with gr.TabItem("Chat", id=0):
             with gr.Row():
-                openai_api_key_textbox = gr.Textbox(
-                    placeholder="Paste your OpenAI API key (sk-...)",
-                    show_label=False,
-                    lines=1,
-                    type="password",
-                )
-                model_selector = gr.Dropdown(
-                    choices=["gpt-3.5-turbo", "gpt-4", "other"],
-                    label="Model",
-                    show_label=True,
-                    value = "gpt-3.5-turbo"
-                )
-                k_textbox = gr.Textbox(
-                    placeholder="k: Number of search results to consider",
-                    label="Search Results k:",
-                    show_label=True,
-                    lines=1,
-                    value="20",
-                )
-                search_type_selector = gr.Dropdown(
-                    choices=["similarity", "mmr", "svm"],
-                    label="Search Type",
-                    show_label=True,
-                    value = "similarity"
-                )
-                max_tokens_textbox = gr.Textbox(
-                    placeholder="max_tokens: Maximum number of tokens to generate",
-                    label="max_tokens",
-                    show_label=True,
-                    lines=1,
-                    value="1000",
-                )
-            chatbot = gr.Chatbot()
+                chatbot = gr.Chatbot()
             with gr.Row():
                 clear_btn = gr.Button("Clear Chat", variant="secondary").style(full_width=False)
                 message = gr.Textbox(
@@ -240,12 +210,66 @@ with block:
                 submit = gr.Button(value="Send").style(full_width=False)
             gr.Examples(
                 examples=[
-                    "What does this code do?",
                     "I want to change the chat-pykg app to have a log viewer, where the user can see what python is doing in the background. How could I do that?",
-                    "Hello, I want to allow chat-pykg to search the internet before answering, can you help me change the code to do that? Thanks.",
+                    "Hello, I want to allow chat-pykg to search google before answering. In the langchain docs it says you can use a tool to do this: from langchain.agents import load_tools\ntools = load_tools([“google-search”]). How would I need to change get_new_chain1 function to use tools when it needs to as well as searching the vectorstore? Thanks!",
+                    "Great, thanks. What if I want to add other tools in the future? Can you please change get_new_chain1 function to do that?"
                 ],
                 inputs=message,
             )
+            with gr.Row():
+                with gr.Column(scale=1):
+                    model_selector = gr.Dropdown(
+                        choices=["gpt-3.5-turbo", "gpt-4", "other"],
+                        label="Model",
+                        show_label=True,
+                        value = "gpt-4"
+                    )
+                    k_textbox = gr.Textbox(
+                        placeholder="k: Number of search results to consider",
+                        label="Search Results k:",
+                        show_label=True,
+                        lines=1,
+                        value="20",
+                    )
+                    search_type_selector = gr.Dropdown(
+                        choices=["similarity", "mmr", "svm"],
+                        label="Search Type",
+                        show_label=True,
+                        value = "similarity"
+                    )
+                    max_tokens_textbox = gr.Textbox(
+                        placeholder="max_tokens: Maximum number of tokens to generate",
+                        label="max_tokens",
+                        show_label=True,
+                        lines=1,
+                        value="500",
+                    )
+                with gr.Column(scale=1):
+                    gr.HTML("")
+                with gr.Column(scale=1):
+                    gr.HTML("")
+                with gr.Column(scale=1):
+                    openai_api_key_textbox = gr.Textbox(
+                        placeholder="Paste your OpenAI API key (sk-...)",
+                        show_label=True,
+                        lines=1,
+                        type="password",
+                        label="OpenAI API Key",
+                    )
+                    google_api_key_textbox = gr.Textbox(
+                        placeholder="Paste your Google API key (AIza...)",
+                        show_label=True,
+                        lines=1,
+                        type="password",
+                        label="Google API Key",
+                    )
+                    google_cse_id_textbox = gr.Textbox(
+                        placeholder="Paste your Google CSE ID (0123...)",
+                        show_label=True,
+                        lines=1,
+                        type="password",
+                        label="Google CSE ID",
+                    )
 
             gr.HTML(
                 """
@@ -318,8 +342,8 @@ with block:
         debug_state.value = False
         radio_state = gr.State()
 
-        submit.click(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
-        message.submit(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
+        submit.click(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
+        message.submit(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
         load_collections_button.click(merge_collections, inputs=[collections_viewer, vs_state, k_textbox, search_type_selector, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state])#.then(change_tab, None, tabs) #.then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
         make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
@@ -334,7 +358,7 @@ with block:
         select_vectorstore_radio.change(update_radio, inputs = select_vectorstore_radio, outputs = make_vectorstore_radio)
 
         # Whenever chain parameters change, destroy the agent. 
-        input_list = [openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, select_vectorstore_radio, make_embedding_radio]
+        input_list = [openai_api_key_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, make_embedding_radio]
         output_list = [agent_state]
         for input_item in input_list:
             input_item.change(

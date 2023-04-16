@@ -8,3 +8,4 @@ gradio
 chromadb
 sentence_transformers
 python-magic
+google-api-python-client
