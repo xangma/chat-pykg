@@ -245,10 +245,6 @@ with block:
                         value="500",
                     )
                 with gr.Column(scale=1):
-                    gr.HTML("")
-                with gr.Column(scale=1):
-                    gr.HTML("")
-                with gr.Column(scale=1):
                     openai_api_key_textbox = gr.Textbox(
                         placeholder="Paste your OpenAI API key (sk-...)",
                         show_label=True,
