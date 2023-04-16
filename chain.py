@@ -15,32 +15,6 @@ from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
 from langchain.chains.llm import LLMChain
 from langchain.schema import BaseLanguageModel, BaseRetriever, Document
 from langchain.prompts.prompt import PromptTemplate
-from langchain.utilities.google_serper import GoogleSerperAPIWrapper
-from langchain.utilities.google_search import GoogleSearchAPIWrapper
-from langchain.agents.self_ask_with_search.base import SelfAskWithSearchChain
-from langchain.agents.self_ask_with_search.prompt import PROMPT
-
-class ConversationalRetrievalChainWithGoogleSearch(ConversationalRetrievalChain):
-    google_search_tool: GoogleSearchAPIWrapper
-
-    def _get_docs(self, question: str, inputs: Dict[str, Any]) -> List[Document]:
-        # Get documents from the retriever
-        docs_from_retriever = self.retriever.get_relevant_documents(question)
-
-        # Get search results from Google Search
-        search_results = self.google_search_tool.results(question, num_results=self.google_search_tool.k)
-
-        # Create documents from the search results
-        docs_from_search = []
-        for result in search_results:
-            content = result.get("snippet", "")
-            metadata = {"title": result["title"], "link": result["link"]}
-            docs_from_search.append(Document(page_content=content, metadata=metadata))
-
-        # Combine both lists of documents
-        docs = docs_from_retriever + docs_from_search
-
-        return self._reduce_tokens_below_limit(docs)
 
 def get_new_chain1(vectorstore, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox) -> Chain:
     retriever = None
@@ -91,18 +65,8 @@ def get_new_chain1(vectorstore, vectorstore_radio, model_selector, k_textbox, se
     # memory = ConversationKGMemory(llm=llm, input_key="question", output_key="answer")
     memory = ConversationBufferWindowMemory(input_key="question", output_key="answer", k=5)
 
-    google_search_tool = GoogleSearchAPIWrapper(search_engine = "google", k = int(int(k_textbox)/2))
-
     qa_orig = ConversationalRetrievalChain(
         retriever=retriever, memory=memory, combine_docs_chain=doc_chain, question_generator=question_generator, verbose=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
-    qa_with_google_search = ConversationalRetrievalChainWithGoogleSearch(
-        retriever=retriever,
-        memory=memory,
-        combine_docs_chain=doc_chain,
-        question_generator=question_generator,
-        google_search_tool=google_search_tool,
-        verbose=True,
-        callback_manager=CallbackManager([StreamingStdOutCallbackHandler()])
-    )
+
     qa = qa_orig
     return qa
