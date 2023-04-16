@@ -17,20 +17,20 @@ from langchain.schema import BaseLanguageModel, BaseRetriever, Document
 from langchain.prompts.prompt import PromptTemplate
 
 
-# logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-# logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-
-def get_new_chain1(vectorstore, model_selector, k_textbox, max_tokens_textbox) -> Chain:
-
-    # def _get_docs(self, question: str, inputs: Dict[str, Any]) -> List[Document]:
-    #     docs = self.retriever.vectorstore._collection.query(question, n_results=self.retriever.search_kwargs["k"], where = {"source":{"$contains":"search_string"}}, where_document = {"$contains":"search_string"})
-    #     return self._reduce_tokens_below_limit(docs)
+def get_new_chain1(vectorstore, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox) -> Chain:
+    retriever = None
+    if vectorstore_radio == 'Chroma':
+        retriever = vectorstore.as_retriever(search_type=search_type_selector)
+        retriever.search_kwargs = {"k":int(k_textbox)}
+    if vectorstore_radio == 'raw':
+        if search_type_selector == 'svm':
+            retriever = SVMRetriever.from_texts(merged_vectorstore, embedding_function)
+            retriever.k = int(k_textbox)
 
     template = """You are called chat-pykg and are an AI assistant coded in python using langchain and gradio. You are very helpful for answering questions about various open source libraries.
                 You are given the following extracted parts of code and a question. Provide a conversational answer to the question.
                 Do NOT make up any hyperlinks that are not in the code.
                 If you don't know the answer, just say that you don't know, don't try to make up an answer.
-                If the question is not about the package documentation, politely inform them that you are tuned to only answer questions about the package documentations.
                 Question: {question}
                 =========
                 {context}
@@ -48,13 +48,9 @@ def get_new_chain1(vectorstore, model_selector, k_textbox, max_tokens_textbox) -
     
     # memory = ConversationKGMemory(llm=llm, input_key="question", output_key="answer")
     memory = ConversationBufferWindowMemory(input_key="question", output_key="answer", k=5)
-    retriever = vectorstore.as_retriever(search_type="similarity")
-    if len(k_textbox) != 0:
-        retriever.search_kwargs = {"k": int(k_textbox)}
-    else:
-        retriever.search_kwargs = {"k": 10}
+
     qa = ConversationalRetrievalChain(
-        retriever=retriever, memory=memory, combine_docs_chain=doc_chain, question_generator=question_generator)
+        retriever=retriever, memory=memory, combine_docs_chain=doc_chain, question_generator=question_generator, verbose=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
     # qa._get_docs = _get_docs.__get__(qa, ConversationalRetrievalChain)
 
     return qa

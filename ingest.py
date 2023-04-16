@@ -17,58 +17,7 @@ from pydantic import Extra, Field, root_validator
 import logging
 logger = logging.getLogger()
 from langchain.docstore.document import Document
-
-# class CachedChroma(Chroma, ABC):
-#     """
-#     Wrapper around Chroma to make caching embeddings easier.
-    
-#     It automatically uses a cached version of a specified collection, if available.
-#         Example:
-#             .. code-block:: python
-#                     from langchain.vectorstores import Chroma
-#                     from langchain.embeddings.openai import OpenAIEmbeddings
-#                     embeddings = OpenAIEmbeddings()
-#                     vectorstore = CachedChroma.from_documents_with_cache(
-#                         ".persisted_data", texts, embeddings, collection_name="fun_experiment"
-#                     )
-#         """
-    
-#     @classmethod
-#     def from_documents_with_cache(
-#             cls,
-#             persist_directory: str,
-#             documents: Optional[List[Document]] = None,
-#             embedding: Optional[Embeddings] = None,
-#             ids: Optional[List[str]] = None,
-#             collection_name: str = Chroma._LANGCHAIN_DEFAULT_COLLECTION_NAME,
-#             client_settings: Optional[chromadb.config.Settings] = None,
-#             **kwargs: Any,
-#     ) -> Chroma:
-        # client_settings = Settings(
-        #     chroma_db_impl="duckdb+parquet",
-        #     persist_directory=persist_directory # Optional, defaults to .chromadb/ in the current directory
-        # )
-        # client = chromadb.Client(client_settings)
-#         collection_names = [c.name for c in client.list_collections()]
-
-#         if collection_name in collection_names:
-#             return Chroma(
-#                 collection_name=collection_name,
-#                 embedding_function=embedding,
-#                 persist_directory=persist_directory,
-#                 client_settings=client_settings,
-#             )
-#         if documents:
-#             return Chroma.from_documents(
-#                 documents=documents,
-#                 embedding=embedding,
-#                 ids=ids,
-#                 collection_name=collection_name,
-#                 persist_directory=persist_directory,
-#                 client_settings=client_settings,
-#                 **kwargs
-#             )
-#         raise ValueError("Either documents or collection_name must be specified.")
+import numpy as np
 
 def embedding_chooser(embedding_radio):
     if embedding_radio == "Sentence Transformers":
@@ -133,7 +82,7 @@ def get_text(content):
     else:
         return ""
 
-def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, embedding_radio, debug=False):
+def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorstore_radio, embedding_radio, debug=False):
     cleared_list = urls.copy()
     def sanitize_folder_name(folder_name):
         if folder_name != '':
@@ -164,6 +113,7 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, embeddin
         if orgrepo.replace('/','-') in all_collections_state:
             logging.info(f"Skipping {orgrepo} as it is already in the database")
             continue
+        documents_split = []
         documents = []
         paths = []
         paths_by_ext = {}
@@ -227,21 +177,47 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, embeddin
                     continue
         for ext in docs_by_ext.keys():
             if ext == "py":
-                documents += py_splitter.split_documents(docs_by_ext[ext])
+                documents_split += py_splitter.split_documents(docs_by_ext[ext])
+                documents += docs_by_ext[ext]
             if ext == "md":
-                documents += md_splitter.split_documents(docs_by_ext[ext])
+                documents_split += md_splitter.split_documents(docs_by_ext[ext])
+                documents += docs_by_ext[ext]
             # else:
             #     documents += text_splitter.split_documents(docs_by_ext[ext]
-        all_docs += documents
+        all_docs += documents_split
         # For each document, add the metadata to the page_content
-        for doc in documents:
+        for doc in documents_split:
+            if local_repo_path != '.':
+                doc.metadata["source"] = doc.metadata["source"].replace(local_repo_path, "")
+            if doc.metadata["source"] == '/':
+                doc.metadata["source"] = doc.metadata["source"][1:]
             doc.page_content = f'# source:{doc.metadata["source"]}\n{doc.page_content}'
+        for doc in documents:
+            if local_repo_path != '.':
+                doc.metadata["source"] = doc.metadata["source"].replace(local_repo_path, "")
+            if doc.metadata["source"] == '/':
+                doc.metadata["source"] = doc.metadata["source"][1:]
+            doc.page_content = f'# source:{doc.metadata["source"]}\n{doc.page_content}'
+            
         if type(embedding_radio) == gr.Radio:
             embedding_radio = embedding_radio.value
         persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
+        persist_directory_raw = Path('.persisted_data_raw')
+        persist_directory_raw.mkdir(parents=True, exist_ok=True)
         collection_name = orgrepo.replace('/','-')
-        collection = Chroma.from_documents(documents=documents, collection_name=collection_name, embedding=embedding_function, persist_directory=persist_directory)
-        collection.persist()
+
+        if vectorstore_radio == 'Chroma':
+            collection = Chroma.from_documents(documents=documents_split, collection_name=collection_name, embedding=embedding_function, persist_directory=persist_directory)
+            collection.persist()
+        
+        if vectorstore_radio == 'raw':
+        # Persist the raw documents
+            docarr = np.array([doc.page_content for doc in documents_split])
+            np.save(os.path.join(persist_directory_raw, f"{collection_name}.npy"), docarr)
+            # with open(os.path.join(persist_directory_raw, f"{collection_name}"), "w") as f:
+            #     for doc in documents:
+            #         f.write(doc.page_content)
+
         all_collections_state.append(collection_name)
         cleared_list[j][0], cleared_list[j][1] = '', ''
     return all_collections_state, gr.update(value=cleared_list)

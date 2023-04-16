@@ -1,5 +1,5 @@
 .chroma/*
-.persisted_data/*
+.persisted_data*
 downloaded/*
 __pycache__/*
 launch.json
