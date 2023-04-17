@@ -296,7 +296,7 @@ with block:
                     )
         with gr.TabItem("Get New Repositories", id=2):
                 with gr.Row():
-                    all_collections_to_get = gr.List(headers=['Repository URL', 'Folders'], row_count=3, col_count=2, label='Repositories to get', show_label=True, interactive=True, max_cols=2, max_rows=3)
+                    all_collections_to_get = gr.List(headers=['Repository (organisation/repo_name)', 'Folders (folder1,folder2...)'], row_count=3, col_count=2, label='Repositories to get', show_label=True, interactive=True, max_cols=2, max_rows=3)
                     make_collections_button = gr.Button(value="Get new repositories", variant="secondary").style(full_width=False)
                 with gr.Row():
                     chunk_size_textbox = gr.Textbox(
