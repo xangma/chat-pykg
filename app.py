@@ -59,6 +59,8 @@ def clear_chat(chatbot, history):
 def merge_collections(collection_load_names, vs_state, k_textbox, search_type_selector, vectorstore_radio, embedding_radio): 
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
+    if type(vectorstore_radio) == gr.Radio:
+        vectorstore_radio = vectorstore_radio.value
     persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
     persist_directory_raw = Path('.persisted_data_raw')
     embedding_function = embedding_chooser(embedding_radio)
@@ -66,21 +68,33 @@ def merge_collections(collection_load_names, vs_state, k_textbox, search_type_se
     merged_embeddings = []
     merged_vectorstore = None
     if vectorstore_radio == 'Chroma':
-        for collection_name in collection_load_names: 
-            chroma_obj_get = chromadb.Client(Settings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=persist_directory,
-                anonymized_telemetry = True
-            ))
-            if collection_name == '': 
-                continue
-            collection_obj = chroma_obj_get.get_collection(collection_name, embedding_function=embedding_function)
-            collection = collection_obj.get(include=["metadatas", "documents", "embeddings"])
+        if len(collection_load_names) > 1:
+            for collection_name in collection_load_names: 
+                if collection_name == '': 
+                    continue
+                collection_obj = Chroma(collection_name=collection_name, persist_directory=persist_directory)
+                collection = collection_obj._collection.get(include=["metadatas", "documents", "embeddings"])
+                for i in range(len(collection['documents'])):
+                    merged_documents.append(Document(page_content=collection['documents'][i], metadata = collection['metadatas'][i]))
+                    # merged_embeddings.append(collection['embeddings'][i])
+            merged_vectorstore = Chroma(collection_name="temp", embedding_function=embedding_function)
+            merged_vectorstore.add_documents(documents=merged_documents)
+            return merged_vectorstore
+        elif len(collection_load_names) == 1:
+            collection_name = collection_load_names[0]
+            collection_obj = Chroma(collection_name=collection_name, persist_directory=persist_directory, )
+            collection = collection_obj._collection.get(include=["metadatas", "documents", "embeddings"])
             for i in range(len(collection['documents'])):
                 merged_documents.append(Document(page_content=collection['documents'][i], metadata = collection['metadatas'][i]))
                 merged_embeddings.append(collection['embeddings'][i])
-        merged_vectorstore = Chroma(collection_name="temp", embedding_function=embedding_function)
-        merged_vectorstore.add_documents(documents=merged_documents, embeddings=merged_embeddings)
+            
+            merged_vectorstore = Chroma(collection_name="temp")
+            merged_vectorstore._collection.add(ids = collection['ids'], embeddings=collection['embeddings'], metadatas=collection['metadatas'], documents=collection['documents'])
+            merged_vectorstore._embedding_function = embedding_function
+            # Create an index for the collection
+            return merged_vectorstore
+        else:
+            return None
     if vectorstore_radio == 'raw':
         merged_vectorstore = []
         for collection_name in collection_load_names: 
@@ -96,6 +110,8 @@ def merge_collections(collection_load_names, vs_state, k_textbox, search_type_se
     return merged_vectorstore
 
 def set_chain_up(openai_api_key, google_api_key, google_cse_id, model_selector, k_textbox, search_type_selector, max_tokens_textbox, vectorstore_radio, vectorstore, agent):
+    if type(vectorstore_radio) == gr.Radio:
+        vectorstore_radio = vectorstore_radio.value
     if not agent or type(agent) == str: 
         if vectorstore != None:
             if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
@@ -121,6 +137,8 @@ def set_chain_up(openai_api_key, google_api_key, google_cse_id, model_selector, 
 def delete_collection(all_collections_state, collections_viewer, select_vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
+    if type(select_vectorstore_radio) == gr.Radio:
+        select_vectorstore_radio = select_vectorstore_radio.value
     persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
     persist_directory_raw = Path('.persisted_data_raw')
     if select_vectorstore_radio == 'Chroma':
@@ -148,6 +166,8 @@ def delete_collection(all_collections_state, collections_viewer, select_vectorst
 def delete_all_collections(all_collections_state, select_vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
+    if type(select_vectorstore_radio) == gr.Radio:
+        select_vectorstore_radio = select_vectorstore_radio.value
     persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
     persist_directory_raw = Path('.persisted_data_raw')
     if select_vectorstore_radio == 'Chroma':
@@ -159,6 +179,9 @@ def delete_all_collections(all_collections_state, select_vectorstore_radio, embe
 def list_collections(all_collections_state, select_vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
+    if type(select_vectorstore_radio) == gr.Radio:
+        select_vectorstore_radio = select_vectorstore_radio.value
+    embedding_function = embedding_chooser(embedding_radio)
     persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
     persist_directory_raw = Path('.persisted_data_raw')
     if select_vectorstore_radio == 'Chroma':
@@ -166,7 +189,7 @@ def list_collections(all_collections_state, select_vectorstore_radio, embedding_
             chroma_db_impl="duckdb+parquet",
             persist_directory=persist_directory # Optional, defaults to .chromadb/ in the current directory
         ))
-        collection_names = [[c.name][0] for c in client.list_collections()]
+        collection_names = [i[1] for i in client._db.list_collections()]
         return collection_names
     if select_vectorstore_radio == 'raw':
         if os.path.exists(persist_directory_raw):
@@ -267,7 +290,7 @@ with block:
                         label="Google CSE ID",
                     )
 
-            gr.HTML(
+            gr.Markdown(
                 """
             This simple application is an implementation of ChatGPT but over an external dataset.  
             The source code is split/broken down into many document objects using langchain's pythoncodetextsplitter, which apparently tries to keep whole functions etc. together. This means that each file in the source code is split into many smaller documents, and the k value is the number of documents to consider when searching for the most similar documents to the question. With gpt-3.5-turbo, k=10 seems to work well, but with gpt-4, k=20 seems to work better.  
@@ -296,8 +319,16 @@ with block:
                     )
         with gr.TabItem("Get New Repositories", id=2):
                 with gr.Row():
-                    all_collections_to_get = gr.List(headers=['Repository (organisation/repo_name)', 'Folders (folder1,folder2...)'], row_count=3, col_count=2, label='Repositories to get', show_label=True, interactive=True, max_cols=2, max_rows=3)
-                    make_collections_button = gr.Button(value="Get new repositories", variant="secondary").style(full_width=False)
+                    with gr.Column():
+                        all_collections_to_get = gr.List(headers=['Repository (organisation/repo_name)', 'Folders (folder1,folder2...)'], row_count=3, col_count=2, label='Repositories to get', show_label=True, interactive=True, max_cols=2, max_rows=3)
+                        gr.Markdown(
+                            """Folder syntax:  
+                            - folder1,folder2,etc.,  
+                            - Leave blank or put . to get all known extensions from folders,  
+                            - '**/*.py' to get all python files in all directories.  """
+                            )
+                    with gr.Column():
+                        make_collections_button = gr.Button(value="Get new repositories", variant="secondary").style(full_width=False)
                 with gr.Row():
                     chunk_size_textbox = gr.Textbox(
                         placeholder="Chunk size",
@@ -345,7 +376,7 @@ with block:
         make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state,select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        get_all_collection_names_button.click(list_collections, inputs=[all_collections_state,select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        get_all_collection_names_button.click(list_collections, inputs=[all_collections_state, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         clear_btn.click(clear_chat, inputs = [chatbot, history_state], outputs = [chatbot, history_state])
 
         make_embedding_radio.change(update_radio, inputs = make_embedding_radio, outputs = select_embedding_radio)
@@ -362,8 +393,6 @@ with block:
                 inputs=output_list,
                 outputs=output_list,
             )
-        all_collections_state.value = list_collections(all_collections_state, select_vectorstore_radio, select_embedding_radio)
-        block.load(update_checkboxgroup, inputs = all_collections_state, outputs = collections_viewer)
     log_textbox_handler = LogTextboxHandler(gr.TextArea(interactive=False, placeholder="Logs will appear here...", visible=False))
     log_textbox = log_textbox_handler.textbox
     logging.getLogger().addHandler(log_textbox_handler)
@@ -375,5 +404,7 @@ with block:
     gr.HTML(
         "<center>Powered by <a href='https://github.com/hwchase17/langchain'>LangChain 🦜️🔗</a></center>"
     )
+    all_collections_state.value = list_collections(all_collections_state, select_vectorstore_radio, select_embedding_radio)
+    block.load(update_checkboxgroup, inputs = all_collections_state, outputs = collections_viewer)
 block.queue(concurrency_count=40)
 block.launch(debug=True)

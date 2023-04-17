@@ -18,6 +18,24 @@ import logging
 logger = logging.getLogger()
 from langchain.docstore.document import Document
 import numpy as np
+import mimetypes
+
+def get_mime_type(file_path):
+    magic_obj = magic.Magic(mime=True)
+    mime_type = magic_obj.from_file(file_path)
+    return mime_type
+
+def get_file_extension(mime_type):
+    # Custom MIME type to file extension mapping for special cases
+    custom_mapping = {
+        'text/x-script.python': '.py'
+    }
+
+    if mime_type in custom_mapping:
+        return custom_mapping[mime_type]
+
+    extension = mimetypes.guess_extension(mime_type)
+    return extension
 
 def embedding_chooser(embedding_radio):
     if embedding_radio == "Sentence Transformers":
@@ -93,11 +111,14 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
 
     def is_hidden(path):
         return os.path.basename(path).startswith('.')
-    
-    embedding_function = embedding_chooser(embedding_radio)
+    if type(embedding_radio) == gr.Radio:
+        embedding_radio = embedding_radio.value
+    if type(vectorstore_radio) == gr.Radio:
+        vectorstore_radio = vectorstore_radio.value
     all_docs = []
     shutil.rmtree('downloaded/', ignore_errors=True)
     known_exts = ["py", "md"]
+    known_exts = [""]
     # Initialize text splitters
     py_splitter = PythonCodeTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=int(chunk_size), chunk_overlap=int(chunk_overlap))
@@ -106,6 +127,7 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
     # Process input URLs
     urls = [[url.strip(), [sanitize_folder_name(folder) for folder in url_folders.split(',')]] for url, url_folders in urls]
     for j in range(len(urls)):
+        embedding_function = embedding_chooser(embedding_radio)
         orgrepo = urls[j][0]
         repo_folders = urls[j][1]
         if orgrepo == '':
@@ -116,11 +138,6 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
         documents_split = []
         documents = []
         paths = []
-        paths_by_ext = {}
-        docs_by_ext = {}
-        for ext in known_exts + ["other"]:
-            docs_by_ext[ext] = []
-            paths_by_ext[ext] = []
         
         if orgrepo[0] == '/' or orgrepo[0] == '.':
             # Ingest local folder
@@ -136,13 +153,16 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
             subprocess.run(["git", "init"], cwd=local_repo_path)
             # Add the remote repository
             subprocess.run(["git", "remote", "add", "-f", "origin", repo_url], cwd=local_repo_path)
+            # if repo_folders[0] =='' or repo_folders[0] == '.': # if no folders specified, use the whole repo
+            #     repo_folders = ['**/*.' + i for i in known_exts]
+            if repo_folders[0] != '' and repo_folders[0] != '.':
             # Enable sparse-checkout
-            subprocess.run(["git", "config", "core.sparseCheckout", "true"], cwd=local_repo_path)
-            # Specify the folder to checkout
-            cmd = ["git", "sparse-checkout", "set"] + [i for i in repo_folders]
-            subprocess.run(cmd, cwd=local_repo_path)
+                subprocess.run(["git", "config", "core.sparseCheckout", "true"], cwd=local_repo_path)
+                # Specify the folder to checkout
+                cmd = ["git", "sparse-checkout", "set"] + [i for i in repo_folders]
+                subprocess.run(cmd, cwd=local_repo_path)
             # Check if branch is called main or master
-
+            
             # Checkout the desired branch
             res = subprocess.run(["git", "checkout", 'main'], cwd=local_repo_path)
             if res.returncode == 1:
@@ -159,48 +179,63 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
                 file_path = os.path.join(root, file)
                 rel_file_path = os.path.relpath(file_path, local_repo_path)
                 try:
-                    if '.' not in rel_file_path:
-                        inferred_filetype = magic.from_file(file_path, mime=True)
-                        if "python" in inferred_filetype or "text/plain" in inferred_filetype:
-                            ext = "py"
-                        else:
-                            ext = "other"
-                    else:
-                        ext = rel_file_path.split('.')[-1]
-                    if docs_by_ext.get(ext) is None:
-                        ext = "other" 
                     doc = TextLoader(os.path.join(local_repo_path, rel_file_path)).load()[0]
+                    doc.metadata["local_source"] = doc.metadata["source"]
                     doc.metadata["source"] = os.path.join(orgrepo, rel_file_path)
-                    docs_by_ext[ext].append(doc)
-                    paths_by_ext[ext].append(rel_file_path)
+                    documents.append(doc)
                 except Exception as e:
                     continue
+        docs_by_ext = {}
+        for doc in documents:
+            file_path = doc.metadata['local_source']
+            if '.' not in doc.metadata['local_source']:
+                ext = get_file_extension(get_mime_type(file_path))
+                if ext == None:
+                    ext = "txt"
+                if ext[0] == '.':
+                    ext = ext[1:]
+            else:
+                ext = doc.metadata['local_source'].split('.')[-1]
+            if docs_by_ext.get(ext) is None:
+                docs_by_ext[ext] = []
+            docs_by_ext[ext].append(doc)
+                # inferred_filetype = magic.from_file(file_path, mime=True)
+
+        # check len(documents) == the sum of the lengths of the lists in docs_by_ext
+        # if not, then there was a problem with the file
+        assert len(documents) == sum([len(docs_by_ext[ext]) for ext in docs_by_ext.keys()])
+        documents_split = []
         for ext in docs_by_ext.keys():
-            if ext == "py":
-                documents_split += py_splitter.split_documents(docs_by_ext[ext])
-                documents += docs_by_ext[ext]
-            if ext == "md":
-                documents_split += md_splitter.split_documents(docs_by_ext[ext])
-                documents += docs_by_ext[ext]
-            # else:
-            #     documents += text_splitter.split_documents(docs_by_ext[ext]
+            try:
+                if ext in ["py", ".py"]:
+                    documents_split += py_splitter.split_documents(docs_by_ext[ext])
+                    continue
+                    # documents += docs_by_ext[ext]
+                elif ext in ["md", ".md"]:
+                    documents_split += md_splitter.split_documents(docs_by_ext[ext])
+                    continue
+                    # documents += docs_by_ext[ext]
+                else:
+                    documents_split += text_splitter.split_documents(docs_by_ext[ext])
+                    continue
+            except Exception as e:
+                print(e)
+                continue
         all_docs += documents_split
         # For each document, add the metadata to the page_content
         for doc in documents_split:
             if local_repo_path != '.':
-                doc.metadata["source"] = doc.metadata["source"].replace(local_repo_path, "")
-            if doc.metadata["source"] == '/':
-                doc.metadata["source"] = doc.metadata["source"][1:]
-            doc.page_content = f'# source:{doc.metadata["source"]}\n{doc.page_content}'
+                doc.metadata["local_source"] = doc.metadata["local_source"].replace(local_repo_path, "")
+            if doc.metadata["local_source"] == '/':
+                doc.metadata["local_source"] = doc.metadata["local_source"][1:]
+            doc.page_content = f'# source:{doc.metadata["local_source"]}\n{doc.page_content}'
         for doc in documents:
             if local_repo_path != '.':
                 doc.metadata["source"] = doc.metadata["source"].replace(local_repo_path, "")
             if doc.metadata["source"] == '/':
                 doc.metadata["source"] = doc.metadata["source"][1:]
             doc.page_content = f'# source:{doc.metadata["source"]}\n{doc.page_content}'
-            
-        if type(embedding_radio) == gr.Radio:
-            embedding_radio = embedding_radio.value
+
         persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
         persist_directory_raw = Path('.persisted_data_raw')
         persist_directory_raw.mkdir(parents=True, exist_ok=True)
