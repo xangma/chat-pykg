@@ -33,7 +33,7 @@ def get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, se
                 =========
                 Context:{context}
                 =========
-                Question: {question}
+                Question: {input}
                 Helpful answer:"""
     QA_PROMPT.template = qa_template
     condense_question_template = """Given the following conversation and a Follow Up Input, rephrase the Follow Up Input to be a Standalone question.
@@ -43,7 +43,7 @@ def get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, se
     Chat History:
     {chat_history}
     =========
-    Follow Up Input: {question}
+    Follow Up Input: {input}
     Standalone question in markdown:"""
     CONDENSE_QUESTION_PROMPT.template = condense_question_template
     
@@ -64,7 +64,7 @@ def get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, se
     doc_chain = load_qa_chain(doc_chain_llm, chain_type="stuff", prompt=QA_PROMPT)#, document_prompt = PromptTemplate(input_variables=["source", "page_content"], template="{source}\n{page_content}"))
     
     # Memory
-    memory = ConversationBufferWindowMemory(input_key="question", output_key="answer", k=5)
+    memory = ConversationBufferWindowMemory(input_key="input", output_key="output", k=5)
     
     tools = get_tools()
     
@@ -82,15 +82,16 @@ def get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, se
                 retriever.k = int(k_textbox)
         # QA Chain
         qa = ConversationalRetrievalChain(
-            retriever=retriever, memory=memory, combine_docs_chain=doc_chain, question_generator=question_generator, verbose=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
+            retriever=retriever, combine_docs_chain=doc_chain, question_generator=question_generator, verbose=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
         
         tools.append(
             Tool(
-            name = f'{vectorstore.name} code QA System',
+            name = f'{vectorstore._collection.metadata} code QA System',
             func = qa.run,
-            description="useful for when you need to answer questions about the {vectorstore.name} code. Input should be a fully formed question."
+            description=f"useful for when you need to answer questions about the {vectorstore._collection.metadata} code. Input should be a fully formed question."
             )
         )
 
-    agent = initialize_agent(tools, llm, agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION, verbose=True)
+    agent = initialize_agent(tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory)
+    
     return agent

@@ -13,7 +13,7 @@ def get_tools() -> List[Tool]:
         Tool(
         name = 'Google Search',
         func = search.run,
-        description="useful for when you need to search the web. Input should be a fully formed question."
+        description="useful for when you need to search the web. Input should be a fully formed question. This tool should only be used if you cannot answer the question using the QA tools, or if the human instructs you specifically."
         )
     )
     # Bash

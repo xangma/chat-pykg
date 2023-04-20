@@ -54,24 +54,21 @@ def set_chain_up(openai_api_key, google_api_key, google_cse_id, model_selector, 
     if type(vectorstore_radio) == gr.Radio:
         vectorstore_radio = vectorstore_radio.value
     if not agent or type(agent) == str: 
-        if vectorstores != []:
-            if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
-                if openai_api_key:
-                    os.environ["OPENAI_API_KEY"] = openai_api_key
-                    os.environ["GOOGLE_API_KEY"] = google_api_key
-                    os.environ["GOOGLE_CSE_ID"] = google_cse_id
-                    qa_chain = get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox)
-                    os.environ["OPENAI_API_KEY"] = ""
-                    os.environ["GOOGLE_API_KEY"] = ""
-                    os.environ["GOOGLE_CSE_ID"] = ""
-                    return qa_chain
-                else:
-                    return 'no_open_aikey'
-            else:
+        if model_selector in ["gpt-3.5-turbo", "gpt-4"]:
+            if openai_api_key:
+                os.environ["OPENAI_API_KEY"] = openai_api_key
+                os.environ["GOOGLE_API_KEY"] = google_api_key
+                os.environ["GOOGLE_CSE_ID"] = google_cse_id
                 qa_chain = get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox)
+                os.environ["OPENAI_API_KEY"] = ""
+                os.environ["GOOGLE_API_KEY"] = ""
+                os.environ["GOOGLE_CSE_ID"] = ""
                 return qa_chain
+            else:
+                return 'no_open_aikey'
         else:
-            return 'no_vectorstore'
+            qa_chain = get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox)
+            return qa_chain
     else:
         return agent
 
@@ -81,16 +78,13 @@ def chat(inp, history, agent):
         if agent == 'no_open_aikey':
             history.append((inp, "Please paste your OpenAI key to use"))
             return history, history
-        if agent == 'no_vectorstore':
-            history.append((inp, "Please ingest some package docs to use"))
-            return history, history
     else:
         print("\n==== date/time: " + str(datetime.datetime.now()) + " ====")
         print("inp: " + inp)
         history = history or []
-        output = agent({"question": inp, "chat_history": history})
-        answer = output["answer"]
-        history.append((inp, answer))
+        output = agent.run({"input": inp, "chat_history": history})
+        answer = output
+        history.append((inp, [answer]))
         print(history)
     return history, history
 
@@ -168,7 +162,6 @@ with block:
                         type="password",
                         label="Google CSE ID",
                     )
-
             gr.Markdown(
                 """
             This simple application is an implementation of ChatGPT but over an external dataset.  
@@ -242,6 +235,7 @@ with block:
         history_state = gr.State()
         agent_state = gr.State()
         vs_state = gr.State()
+        vs_state.value = []
         all_collections_state = gr.State()
         chat_state = gr.State()
         debug_state = gr.State()
@@ -251,7 +245,7 @@ with block:
         submit.click(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
         message.submit(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
-        load_collections_button.click(get_collections, inputs=[collections_viewer, vs_state, k_textbox, search_type_selector, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state])#.then(change_tab, None, tabs) #.then(set_chain_up, inputs=[openai_api_key_textbox, model_selector, k_textbox, max_tokens_textbox, vs_state, agent_state], outputs=[agent_state])
+        load_collections_button.click(get_collections, inputs=[collections_viewer, vs_state, k_textbox, search_type_selector, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state]).then(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, vs_state, agent_state], outputs=[agent_state])
         make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state,select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])

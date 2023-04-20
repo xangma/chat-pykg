@@ -34,8 +34,8 @@ def get_collections(collection_load_names, vs_state, k_textbox, search_type_sele
             vectorstore = Chroma(collection_name="temp")
             vectorstore._collection.add(ids = collection['ids'], embeddings=collection['embeddings'], metadatas=collection['metadatas'], documents=collection['documents'])
             vectorstore._embedding_function = embedding_function
+            vectorstore._collection.metadata = collection_name
             vectorstores.append(vectorstore)
-        return vectorstores
     if vectorstore_radio == 'raw':
         for collection_name in collection_load_names: 
             if collection_name == '':
@@ -44,7 +44,6 @@ def get_collections(collection_load_names, vs_state, k_textbox, search_type_sele
             docarr = np.load(collection_path.as_posix() +'.npy', allow_pickle=True)
             vectorstores.extend(docarr.tolist())
     return vectorstores
-
 
 def delete_collection(all_collections_state, collections_viewer, select_vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
