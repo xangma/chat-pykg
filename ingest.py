@@ -153,20 +153,27 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
             subprocess.run(["git", "init"], cwd=local_repo_path)
             # Add the remote repository
             subprocess.run(["git", "remote", "add", "-f", "origin", repo_url], cwd=local_repo_path)
-            # if repo_folders[0] =='' or repo_folders[0] == '.': # if no folders specified, use the whole repo
-            #     repo_folders = ['**/*.' + i for i in known_exts]
+
+            # Get the default branch name
+            res = subprocess.run(["git", "remote", "show", "origin"], capture_output=True, text=True, cwd=local_repo_path)
+            default_branch = ''
+            for line in res.stdout.splitlines():
+                if 'HEAD branch:' in line:
+                    default_branch = line.split()[-1]
+
             if repo_folders[0] != '' and repo_folders[0] != '.':
-            # Enable sparse-checkout
+                # Enable sparse-checkout
                 subprocess.run(["git", "config", "core.sparseCheckout", "true"], cwd=local_repo_path)
                 # Specify the folder to checkout
                 cmd = ["git", "sparse-checkout", "set"] + [i for i in repo_folders]
                 subprocess.run(cmd, cwd=local_repo_path)
-            # Check if branch is called main or master
-            
+
             # Checkout the desired branch
-            res = subprocess.run(["git", "checkout", 'main'], cwd=local_repo_path)
-            if res.returncode == 1:
-                res = subprocess.run(["git", "checkout", "master"], cwd=local_repo_path)
+            if default_branch:
+                subprocess.run(["git", "checkout", default_branch], cwd=local_repo_path)
+            else:
+                print("Could not find the default branch for the repository.")
+
             #res = subprocess.run(["cp", "-r", (Path(local_repo_path) / repo_folders[i]).as_posix(), '/'.join(destination.split('/')[:-1])])#
             # Iterate through files and process them
         if local_repo_path == '.':
