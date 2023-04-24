@@ -1,8 +1,9 @@
 # chat-pykg/chain.py
 from typing import Any, Dict, Iterable, List, Optional, Type, TypeVar
+import gradio as gr
 from langchain.agents import Tool
 from langchain import HuggingFaceHub
-from langchain.agents import AgentType, initialize_agent
+from langchain.agents import AgentType, initialize_agent, AgentExecutor, ConversationalChatAgent
 from langchain.callbacks.base import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import ConversationalRetrievalChain
@@ -15,12 +16,23 @@ from langchain.chat_models import ChatOpenAI
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts.prompt import PromptTemplate
 from langchain.retrievers import SVMRetriever
-
-
+from langchain.utilities import SerpAPIWrapper
+from langchain.agents import Tool
+from langchain.tools.file_management.write import WriteFileTool
+from langchain.tools.file_management.read import ReadFileTool
+from langchain.experimental import AutoGPT
 from tools import get_tools
+import faiss
+from langchain.vectorstores import FAISS
+from langchain.docstore import InMemoryDocstore
+from ingest import embedding_chooser
 
-def get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox) -> Chain:
-
+def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox) -> Chain:
+    if type(embedding_radio) == gr.Radio:
+        embedding_radio = embedding_radio.value
+    if type(vectorstore_radio) == gr.Radio:
+        vectorstore_radio = vectorstore_radio.value
+    embedding_function = embedding_chooser(embedding_radio)
     # Prompt Templates
     qa_template = """You are called chat-pykg and are an AI assistant coded in python using langchain and gradio. You are very helpful for answering questions about programming with various open source packages and libraries.
                 You are given snippets of code and information in the Context below, as well as a Question to give a Helpful answer to. 
@@ -63,9 +75,7 @@ def get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, se
     question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
     doc_chain = load_qa_chain(doc_chain_llm, chain_type="stuff", prompt=QA_PROMPT)#, document_prompt = PromptTemplate(input_variables=["source", "page_content"], template="{source}\n{page_content}"))
     
-    # Memory
-    memory = ConversationBufferWindowMemory(input_key="input", output_key="output", k=5)
-    
+
     tools = get_tools()
     
     # QA Chains
@@ -86,12 +96,39 @@ def get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, se
         
         tools.append(
             Tool(
-            name = f'{vectorstore._collection.metadata} code QA System',
+            name = f'{vectorstore._collection.metadata} code/package QA Tool',
             func = qa.run,
-            description=f"useful for when you need to answer questions about the {vectorstore._collection.metadata} code. Input should be a fully formed question."
+            description=f"useful for when you need to answer questions about the {vectorstore._collection.metadata} code/package. Input should be a fully formed question."
             )
         )
 
-    agent = initialize_agent(tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory)
-    
-    return agent
+
+    # Memory
+    memory = ConversationBufferWindowMemory(input_key="input", output_key="output", k=5)
+
+    # if embedding_radio == 'OpenAI':
+    #     embedding_size = 1536
+    # elif embedding_radio == 'HuggingFace':
+    #     embedding_size = embedding_function.client.get_sentence_embedding_dimension()
+    # else:
+    #     embedding_size = 768
+    # index = faiss.IndexFlatL2(embedding_size)
+    # memory_vectorstore = FAISS(embedding_function.embed_query, index, InMemoryDocstore({}), {})
+    # agent = AutoGPT.from_llm_and_tools(
+    # ai_name="chat-pykg",
+    # ai_role="Assistant",
+    # tools=tools,
+    # llm=ChatOpenAI(client = None, temperature=0),
+    # memory=memory_vectorstore.as_retriever()
+    # )
+    # # Set verbose to be true
+    # agent.chain.verbose = True
+
+    agent_old = initialize_agent(tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory)
+
+    llmch = LLMChain(llm=llm, prompt=QA_PROMPT)
+    agent = ConversationalChatAgent(llm_chain = llmch)
+    agente = AgentExecutor.from_agent_and_tools(agent, tools, memory=memory, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
+    agente.input_keys = ["input", "chat_history"]
+    return agente
+

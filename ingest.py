@@ -2,7 +2,6 @@
 import tempfile
 import gradio as gr
 from langchain.document_loaders import SitemapLoader, ReadTheDocsLoader, TextLoader
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter, PythonCodeTextSplitter, MarkdownTextSplitter, TextSplitter
 from langchain.vectorstores.faiss import FAISS
 import os
@@ -19,6 +18,16 @@ logger = logging.getLogger()
 from langchain.docstore.document import Document
 import numpy as np
 import mimetypes
+from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
+
+def embedding_chooser(embedding_radio):
+    if embedding_radio == "Sentence Transformers":
+        embedding_function = HuggingFaceEmbeddings()
+    elif embedding_radio == "OpenAI":
+        embedding_function = OpenAIEmbeddings()
+    else:
+        embedding_function = HuggingFaceEmbeddings()
+    return embedding_function
 
 def get_mime_type(file_path):
     magic_obj = magic.Magic(mime=True)
@@ -36,15 +45,6 @@ def get_file_extension(mime_type):
 
     extension = mimetypes.guess_extension(mime_type)
     return extension
-
-def embedding_chooser(embedding_radio):
-    if embedding_radio == "Sentence Transformers":
-        embedding_function = HuggingFaceEmbeddings()
-    elif embedding_radio == "OpenAI":
-        embedding_function = OpenAIEmbeddings()
-    else:
-        embedding_function = HuggingFaceEmbeddings()
-    return embedding_function
 
 # Monkeypatch pending PR
 def _merge_splits(self, splits: Iterable[str], separator: str) -> List[str]:
