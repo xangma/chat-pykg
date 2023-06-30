@@ -4,8 +4,7 @@ import gradio as gr
 from langchain.agents import Tool
 from langchain import HuggingFaceHub
 from langchain.agents import AgentType, initialize_agent, AgentExecutor, ConversationalChatAgent
-from langchain.callbacks.base import CallbackManager
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains.base import Chain
 from langchain.chains.conversational_retrieval.prompts import (
@@ -22,10 +21,10 @@ from langchain.tools.file_management.write import WriteFileTool
 from langchain.tools.file_management.read import ReadFileTool
 from langchain.experimental import AutoGPT
 from tools import get_tools
-import faiss
-from langchain.vectorstores import FAISS
 from langchain.docstore import InMemoryDocstore
 from ingest import embedding_chooser
+
+stdouthandler = StdOutCallbackHandler()
 
 def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox) -> Chain:
     if type(embedding_radio) == gr.Radio:
@@ -62,14 +61,14 @@ def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_select
     # Model Selection
     match model_selector:
         case ['gpt-4', 'gpt-3.5-turbo']:
-            llm = ChatOpenAI(client = None, temperature=0.9, model_name=model_selector)
-            doc_chain_llm = ChatOpenAI(client = None, streaming=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]), verbose=True, temperature=0.9, model_name=model_selector, max_tokens=int(max_tokens_textbox))
+            llm = ChatOpenAI(client = None, temperature=0.9, model=model_selector)
+            doc_chain_llm = ChatOpenAI(client = None, streaming=True, callbacks=[stdouthandler], verbose=True, temperature=0.9, model=model_selector, max_tokens=int(max_tokens_textbox))
         case ['other']:
             llm = HuggingFaceHub(client = None, repo_id="chavinlo/gpt4-x-alpaca")#, model_kwargs={"temperature":0, "max_length":64})
             doc_chain_llm = HuggingFaceHub(client = None, repo_id="chavinlo/gpt4-x-alpaca")
         case _:
-            llm = ChatOpenAI(client = None, temperature=0.9, model_name="gpt-3.5-turbo")
-            doc_chain_llm = ChatOpenAI(client = None, streaming=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]), verbose=True, temperature=0.9, model_name="gpt-3.5-turbo", max_tokens=int(max_tokens_textbox))
+            llm = ChatOpenAI(client = None, temperature=0.9, model="gpt-3.5-turbo")
+            doc_chain_llm = ChatOpenAI(client = None, streaming=True, callbacks=[stdouthandler], verbose=True, temperature=0.9, model="gpt-3.5-turbo", max_tokens=int(max_tokens_textbox))
     
     # Document Chain
     question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
@@ -92,7 +91,7 @@ def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_select
                 retriever.k = int(k_textbox)
         # QA Chain
         qa = ConversationalRetrievalChain(
-            retriever=retriever, combine_docs_chain=doc_chain, question_generator=question_generator, verbose=True, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
+            retriever=retriever, combine_docs_chain=doc_chain, question_generator=question_generator, verbose=True, callbacks=[stdouthandler])
         
         tools.append(
             Tool(
@@ -128,7 +127,7 @@ def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_select
 
     llmch = LLMChain(llm=llm, prompt=QA_PROMPT)
     agent = ConversationalChatAgent(llm_chain = llmch)
-    agente = AgentExecutor.from_agent_and_tools(agent, tools, memory=memory, callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
+    agente = AgentExecutor.from_agent_and_tools(agent, tools, memory=memory, callbacks=[stdouthandler])
     agente.input_keys = ["input", "chat_history"]
     return agente
 
