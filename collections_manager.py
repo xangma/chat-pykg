@@ -13,7 +13,8 @@ from chromadb.config import Settings
 from ingest import embedding_chooser
 
 
-def get_collections(collection_load_names, vs_state, k_textbox, search_type_selector, vectorstore_radio, embedding_radio): 
+def get_collections(collection_load_names, vs_state, agent_state, k_textbox, search_type_selector, vectorstore_radio, embedding_radio):
+    agent_state = None
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
     if type(vectorstore_radio) == gr.Radio:
@@ -43,7 +44,7 @@ def get_collections(collection_load_names, vs_state, k_textbox, search_type_sele
             collection_path = persist_directory_raw / collection_name
             docarr = np.load(collection_path.as_posix() +'.npy', allow_pickle=True)
             vectorstores.extend(docarr.tolist())
-    return vectorstores
+    return vectorstores, agent_state
 
 def delete_collection(all_collections_state, collections_viewer, select_vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
@@ -55,7 +56,8 @@ def delete_collection(all_collections_state, collections_viewer, select_vectorst
     if select_vectorstore_radio == 'Chroma':
         client = chromadb.Client(Settings(
             chroma_db_impl="duckdb+parquet",
-            persist_directory=persist_directory # Optional, defaults to .chromadb/ in the current directory
+            persist_directory=persist_directory, # Optional, defaults to .chromadb/ in the current directory
+            anonymized_telemetry=False
         ))
         for collection in collections_viewer:
             try:
@@ -98,7 +100,8 @@ def list_collections(all_collections_state, select_vectorstore_radio, embedding_
     if select_vectorstore_radio == 'Chroma':
         client = chromadb.Client(Settings(
             chroma_db_impl="duckdb+parquet",
-            persist_directory=persist_directory # Optional, defaults to .chromadb/ in the current directory
+            persist_directory=persist_directory, # Optional, defaults to .chromadb/ in the current directory
+            anonymized_telemetry=False
         ))
         collection_names = [i[1] for i in client._db.list_collections()]
         return collection_names

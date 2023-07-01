@@ -67,7 +67,7 @@ def set_chain_up(openai_api_key, google_api_key, google_cse_id, model_selector, 
             else:
                 return 'no_open_aikey'
         else:
-            qa_chain = get_new_chain(vectorstores, vectorstore_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox)
+            qa_chain = get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox)
             return qa_chain
     else:
         return agent
@@ -97,13 +97,13 @@ with block:
             with gr.Row():
                 chatbot = gr.Chatbot()
             with gr.Row():
-                clear_btn = gr.Button("Clear Chat", variant="secondary").style(full_width=False)
+                clear_btn = gr.Button("Clear Chat", variant="secondary",scale=0)
                 message = gr.Textbox(
                     label="What's your question?",
                     placeholder="What is this code?",
                     lines=1,
                 )
-                submit = gr.Button(value="Send").style(full_width=False)
+                submit = gr.Button(value="Send",scale=0)
             gr.Examples(
                 examples=[
                     "I want to change the chat-pykg app to have a log viewer, where the user can see what python is doing in the background. How could I do that?",
@@ -125,7 +125,7 @@ with block:
                         label="Search Results k:",
                         show_label=True,
                         lines=1,
-                        value="20",
+                        value="10",
                     )
                     search_type_selector = gr.Dropdown(
                         choices=["similarity", "mmr", "svm"],
@@ -163,19 +163,19 @@ with block:
                         label="Google CSE ID",
                     )
             gr.Markdown(
-                """
+            """
             This simple application is an implementation of ChatGPT but over an external dataset.  
             The source code is split/broken down into many document objects using langchain's pythoncodetextsplitter, which apparently tries to keep whole functions etc. together. This means that each file in the source code is split into many smaller documents, and the k value is the number of documents to consider when searching for the most similar documents to the question. With gpt-3.5-turbo, k=10 seems to work well, but with gpt-4, k=20 seems to work better.  
-            The model's memory is set to 5 messages, but I haven't tested with gpt-3.5-turbo yet to see if it works well. It seems to work well with gpt-4."""
+            """
             )
         with gr.TabItem("Repository Selector/Manager", id=1):
             with gr.Row():
                 collections_viewer = gr.CheckboxGroup(choices=[], label='Repository Viewer', show_label=True)
             with gr.Row():
-                load_collections_button = gr.Button(value="Load respositories to chat!", variant="secondary")#.style(full_width=False)
-                get_all_collection_names_button = gr.Button(value="List all saved repositories", variant="secondary")#.style(full_width=False)
-                delete_collections_button = gr.Button(value="Delete selected saved repositories", variant="secondary")#.style(full_width=False)
-                delete_all_collections_button = gr.Button(value="Delete all saved repositories", variant="secondary")#.style(full_width=False)
+                load_collections_button = gr.Button(value="Load respositories to chat!", variant="secondary")#.style(scale=0)
+                get_all_collection_names_button = gr.Button(value="List all saved repositories", variant="secondary")#.style(scale=0)
+                delete_collections_button = gr.Button(value="Delete selected saved repositories", variant="secondary")#.style(scale=0)
+                delete_all_collections_button = gr.Button(value="Delete all saved repositories", variant="secondary")#.style(scale=0)
             with gr.Row():
                 select_embedding_radio = gr.Radio(
                     choices = ['Sentence Transformers', 'OpenAI'],
@@ -200,7 +200,7 @@ with block:
                             - '**/*.py' to get all python files in all directories.  """
                             )
                     with gr.Column():
-                        make_collections_button = gr.Button(value="Get new repositories", variant="secondary").style(full_width=False)
+                        make_collections_button = gr.Button(value="Get new repositories", variant="secondary",scale=0)
                 with gr.Row():
                     chunk_size_textbox = gr.Textbox(
                         placeholder="Chunk size",
@@ -245,7 +245,7 @@ with block:
         submit.click(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
         message.submit(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
-        load_collections_button.click(get_collections, inputs=[collections_viewer, vs_state, k_textbox, search_type_selector, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state]).then(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio,  vs_state, agent_state], outputs=[agent_state])
+        load_collections_button.click(get_collections, inputs=[collections_viewer, vs_state, agent_state, k_textbox, search_type_selector, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state, agent_state]).then(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio,  vs_state, agent_state], outputs=[agent_state])
         make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state,select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
