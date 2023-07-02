@@ -10,25 +10,60 @@ import gradio as gr
 from chain import get_new_chain
 from collections_manager import get_collections, delete_collection, list_collections, delete_all_collections
 from ingest import ingest_docs
-logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+from ansi2html import Ansi2HTMLConverter
+conv = Ansi2HTMLConverter()
+class Logger:
+    def __init__(self, filename):
+        self.terminal = sys.stdout
+        self.log = open(filename, "w")
 
-class LogTextboxHandler(logging.StreamHandler):
-    def __init__(self, textbox):
-        super().__init__()
-        self.textbox = textbox
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+        
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+        
+    def isatty(self):
+        return False    
 
-    def emit(self, record):
-        log_entry = self.format(record)
-        self.textbox.value += f"{log_entry}\n"
+sys.stdout = Logger("output.log")
+
+def read_logs():
+    sys.stdout.flush()
+    with open("output.log", "r") as f:
+        html_string = conv.convert(f.read())
+
+        css_start = html_string.find('<style type="text/css">') + len('<style type="text/css">\n')
+        css_end = html_string.find('</style>')
+
+        css_string = html_string[css_start:css_end]
+
+        lines = css_string.split("\n")
+
+        new_lines = []
+        for line in lines:
+            if "{" in line and "}" in line:
+                start = line.find("{") + 1
+                end = line.find("}")
+                properties = line[start:end].split(";")
+                new_properties = [prop.strip() + " !important;" for prop in properties if prop.strip()]
+                new_line = line[:start] + " ".join(new_properties) + line[end:]
+                new_lines.append(new_line)
+            else:
+                new_lines.append(line)
+
+        new_css_string = "\n".join(new_lines)
+
+        new_html_string = html_string[:css_start] + new_css_string + html_string[css_end:]
+
+        return new_html_string
 
 def toggle_log_textbox(log_textbox_state):
     toggle_visibility = not log_textbox_state
     log_textbox_state = not log_textbox_state
     return log_textbox_state,gr.update(visible=toggle_visibility)
-
-def update_textbox(full_log):
-    return gr.update(value=full_log)
 
 def update_radio(radio):
     return gr.Radio.update(value=radio)
@@ -39,9 +74,6 @@ def change_tab():
 def update_checkboxgroup(all_collections_state):
     new_options = [i for i in all_collections_state]
     return gr.CheckboxGroup.update(choices=new_options)
-
-def update_log_textbox(full_log):
-    return gr.Textbox.update(value=full_log)
 
 def destroy_state(state):
     state = None
@@ -106,9 +138,9 @@ with block:
                 submit = gr.Button(value="Send",scale=0)
             gr.Examples(
                 examples=[
-                    "I want to change the chat-pykg app to have a log viewer, where the user can see what python is doing in the background. How could I do that?",
+                    "I want to change the chat-pykg code to have a log viewer, where the user can see the intermediate steps (e.g. observations) that the langchain Agent Executor is performing in the background. These are currently printed to stdout. What code would I need to change to achieve that?",
                     "Hello, I want to allow chat-pykg to search google before answering. In the langchain docs it says you can use a tool to do this: from langchain.agents import load_tools\ntools = load_tools([“google-search”]). How would I need to change get_new_chain1 function to use tools when it needs to as well as searching the vectorstore? Thanks!",
-                    "Great, thanks. What if I want to add other tools in the future? Can you please change get_new_chain1 function to do that?"
+                    "I'd like to check over the chain.py file in chat-pykg. How can I make it better?"
                 ],
                 inputs=message,
             )
@@ -266,18 +298,19 @@ with block:
                 inputs=output_list,
                 outputs=output_list,
             )
-    log_textbox_handler = LogTextboxHandler(gr.TextArea(interactive=False, placeholder="Logs will appear here...", visible=False))
-    log_textbox = log_textbox_handler.textbox
-    logging.getLogger().addHandler(log_textbox_handler)
+
+    # log_textbox = gr.Textbox(placeholder="Logs will appear here...", visible=False)
+    loghtml = gr.HTML(visible=False)
     log_textbox_visibility_state = gr.State()
     log_textbox_visibility_state.value = False
     log_toggle_button = gr.Button("Toggle Log", variant="secondary")
-    log_toggle_button.click(toggle_log_textbox, inputs=[log_textbox_visibility_state], outputs=[log_textbox_visibility_state,log_textbox])
+    log_toggle_button.click(toggle_log_textbox, inputs=[log_textbox_visibility_state], outputs=[log_textbox_visibility_state,loghtml])
 
     gr.HTML(
         "<center>Powered by <a href='https://github.com/hwchase17/langchain'>LangChain 🦜️🔗</a></center>"
     )
     all_collections_state.value = list_collections(all_collections_state, select_vectorstore_radio, select_embedding_radio)
+    block.load(read_logs, None, loghtml, every=1)
     block.load(update_checkboxgroup, inputs = all_collections_state, outputs = collections_viewer)
 block.queue(concurrency_count=40)
-block.launch(debug=True)
+block.launch(debug=False)

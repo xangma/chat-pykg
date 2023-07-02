@@ -31,7 +31,7 @@ def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_select
     # Model Selection
     match model_selector:
         case 'gpt-3.5-turbo' | 'gpt-4':
-            llm = ChatOpenAI(client = None, temperature=0.9, model=model_selector, verbose=True, max_tokens=int(max_tokens_textbox))
+            llm = ChatOpenAI(client = None, temperature=0.0, model=model_selector, verbose=True, max_tokens=int(max_tokens_textbox))
             doc_chain_llm = ChatOpenAI(client = None, streaming=True, callbacks=[stdouthandler], verbose=True, temperature=0.9, model=model_selector, max_tokens=int(max_tokens_textbox))
         case 'other':
             llm = HuggingFaceHub(client = None, repo_id="chavinlo/gpt4-x-alpaca")#, model_kwargs={"temperature":0, "max_length":64})
@@ -72,6 +72,7 @@ def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_select
     memory = ConversationBufferMemory(memory_key="chat_history")
 
     # Agent
+    llm = ChatOpenAI(client = None, temperature=0.9, model=model_selector, verbose=True, max_tokens=int(max_tokens_textbox))
     ae = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True, memory=memory)#, callbacks=[stdouthandler])
     return ae
 
