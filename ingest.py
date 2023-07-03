@@ -1,4 +1,4 @@
-# chat-pykg/ingest.py
+# chatpykg/ingest.py
 import tempfile
 import gradio as gr
 from langchain.document_loaders import SitemapLoader, ReadTheDocsLoader, TextLoader
@@ -177,7 +177,7 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
             #res = subprocess.run(["cp", "-r", (Path(local_repo_path) / repo_folders[i]).as_posix(), '/'.join(destination.split('/')[:-1])])#
             # Iterate through files and process them
         if local_repo_path == '.':
-            orgrepo='chat-pykg'
+            orgrepo='chatpykg'
         for root, dirs, files in os.walk(local_repo_path):
             dirs[:] = [d for d in dirs if not is_hidden(d)]  # Ignore hidden directories
             for file in files:

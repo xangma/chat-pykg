@@ -11,9 +11,9 @@ from langchain.docstore.document import Document
 import chromadb
 from chromadb.config import Settings
 from ingest import embedding_chooser
-from __init__ import default_vectorstore, default_embedding
+from config import default_vectorstore, default_embedding
 
-def set_vectorstore_client(vectorstore_radio, embedding_radio):
+def create_vectorstore_client(vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
     if type(vectorstore_radio) == gr.Radio:
@@ -29,15 +29,7 @@ def set_vectorstore_client(vectorstore_radio, embedding_radio):
         ))
     return client
 
-client = None
-
-def create_client(vectorstore_radio, embedding_radio):
-    global client
-    client = set_vectorstore_client(vectorstore_radio, embedding_radio)
-
-create_client(default_vectorstore, default_embedding)
-
-def get_collections(collection_load_names, vs_state, agent_state, k_textbox, search_type_selector, vectorstore_radio, embedding_radio):
+def get_collections(collection_load_names, vs_state, agent_state, vectorstore_radio, embedding_radio):
     agent_state = None
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
@@ -50,10 +42,11 @@ def get_collections(collection_load_names, vs_state, agent_state, k_textbox, sea
     embeddings = []
     vectorstores = []
     if vectorstore_radio == 'Chroma':
+        client = create_vectorstore_client(select_vectorstore_radio, embedding_radio)
         for collection_name in collection_load_names: 
-            # collection_obj = Chroma(collection_name=collection_name.replace('/','_'), persist_directory=persist_directory, client=client)
-            collection=client.get_collection(collection_name=collection_name.replace('/','_'),include=["metadatas", "documents", "embeddings"])
-            # collection = collection_obj._collection.get(include=["metadatas", "documents", "embeddings"])
+            collection_obj = Chroma(collection_name=collection_name.replace('/','_'), persist_directory=persist_directory, client=client)
+            # collection=client.get_collection(collection_name=collection_name.replace('/','_'),include=["metadatas", "documents", "embeddings"])
+            collection = collection_obj._collection.get(include=["metadatas", "documents", "embeddings"])
             for i in range(len(collection['documents'])):
                 documents.append(Document(page_content=collection['documents'][i], metadata = collection['metadatas'][i]))
                 embeddings.append(collection['embeddings'][i])
@@ -71,7 +64,7 @@ def get_collections(collection_load_names, vs_state, agent_state, k_textbox, sea
             vectorstores.extend(docarr.tolist())
     return vectorstores, agent_state
 
-def delete_collection(vectorstore_client_state ,all_collections_state, collections_viewer, select_vectorstore_radio, embedding_radio):
+def delete_collection(all_collections_state, collections_viewer, select_vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
     if type(select_vectorstore_radio) == gr.Radio:
@@ -80,13 +73,14 @@ def delete_collection(vectorstore_client_state ,all_collections_state, collectio
     persist_directory_raw = Path('.persisted_data_raw')
     removed = []
     if select_vectorstore_radio == 'Chroma':
-        # client = vectorstore_client_state
+        client = create_vectorstore_client(select_vectorstore_radio, embedding_radio)
         for collection in collections_viewer:
-            # try:
-            client.delete_collection(collection.replace('/','_'))
-            removed.append(collection)
-            # except Exception as e:
-            #     logging.error(e)
+            try:
+                client.delete_collection(collection.replace('/','_'))
+                removed.append(collection)
+            except Exception as e:
+                logging.error(e)
+            client.persist()
     if select_vectorstore_radio == 'raw':
         for collection in collections_viewer:
             try:
@@ -112,7 +106,7 @@ def delete_all_collections(all_collections_state, select_vectorstore_radio, embe
         shutil.rmtree(persist_directory_raw)
     return []
 
-def list_collections(vectorstore_client_state, all_collections_state, select_vectorstore_radio, embedding_radio):
+def list_collections(all_collections_state, select_vectorstore_radio, embedding_radio):
     if type(embedding_radio) == gr.Radio:
         embedding_radio = embedding_radio.value
     if type(select_vectorstore_radio) == gr.Radio:
@@ -121,10 +115,11 @@ def list_collections(vectorstore_client_state, all_collections_state, select_vec
     persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
     persist_directory_raw = Path('.persisted_data_raw')
     if select_vectorstore_radio == 'Chroma':
-        # client = vectorstore_client_state
+        client = create_vectorstore_client(select_vectorstore_radio, embedding_radio)
         collection_names = [i[1].replace('_','/') for i in client._db.list_collections()]
         return collection_names
     if select_vectorstore_radio == 'raw':
         if os.path.exists(persist_directory_raw):
-            return [f.name.split('.npy')[0] for f in os.scandir(persist_directory_raw)]
+            collection_names =[f.name.split('.npy')[0] for f in os.scandir(persist_directory_raw)]
+            return collection_names
     return []
