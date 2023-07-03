@@ -246,8 +246,7 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
         persist_directory = os.path.join(".persisted_data", embedding_radio.replace(' ','_'))
         persist_directory_raw = Path('.persisted_data_raw')
         persist_directory_raw.mkdir(parents=True, exist_ok=True)
-        collection_name = orgrepo.replace('/','-')
-
+        collection_name = orgrepo.replace('/','_')
         if vectorstore_radio == 'Chroma':
             collection = Chroma.from_documents(documents=documents_split, collection_name=collection_name, embedding=embedding_function, persist_directory=persist_directory)
             collection.persist()
@@ -260,7 +259,7 @@ def ingest_docs(all_collections_state, urls, chunk_size, chunk_overlap, vectorst
             #     for doc in documents:
             #         f.write(doc.page_content)
 
-        all_collections_state.append(collection_name)
+        all_collections_state.append(collection_name.replace('_','/'))
         cleared_list[j][0], cleared_list[j][1] = '', ''
     return all_collections_state, gr.update(value=cleared_list)
 

@@ -1,4 +1,4 @@
-# chat-pykg/app.py
+# chatpykg/app.py
 import datetime
 import logging
 import os
@@ -8,10 +8,12 @@ from pathlib import Path
 import numpy as np
 import gradio as gr
 from chain import get_new_chain
-from collections_manager import get_collections, delete_collection, list_collections, delete_all_collections
+from collections_manager import create_client, get_collections, delete_collection, list_collections, delete_all_collections
 from ingest import ingest_docs
 from ansi2html import Ansi2HTMLConverter
 conv = Ansi2HTMLConverter()
+from __init__  import default_vectorstore, default_embedding
+
 class Logger:
     def __init__(self, filename):
         self.terminal = sys.stdout
@@ -60,13 +62,17 @@ def read_logs():
 
         return new_html_string
 
+def recreate_col_obj(vectorstore_radio, embedding_radio):
+    if type(vectorstore_radio) == gr.Radio:
+        vectorstore_radio = vectorstore_radio.value
+    if type(embedding_radio) == gr.Radio:
+        embedding_radio = embedding_radio.value
+    return Collection(vectorstore_radio, embedding_radio)
+
 def toggle_log_textbox(log_textbox_state):
     toggle_visibility = not log_textbox_state
     log_textbox_state = not log_textbox_state
     return log_textbox_state,gr.update(visible=toggle_visibility)
-
-def update_radio(radio):
-    return gr.Radio.update(value=radio)
 
 def change_tab():
     return gr.Tabs.update(selected=0)
@@ -121,7 +127,6 @@ def chat(inp, history, agent):
     return history, history
 
 block = gr.Blocks(title = "chat-pykg", analytics_enabled = False, css=".gradio-container {background-color: system;}")
-
 with block:
     gr.Markdown("<h1><center>chat-pykg</center></h1>")
     with gr.Tabs() as tabs:
@@ -272,22 +277,23 @@ with block:
         chat_state = gr.State()
         debug_state = gr.State()
         debug_state.value = False
-        radio_state = gr.State()
+        vectorstore_client_state = gr.State()
+        vs_state.value = []
 
         submit.click(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
         message.submit(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
 
         load_collections_button.click(get_collections, inputs=[collections_viewer, vs_state, agent_state, k_textbox, search_type_selector, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state, agent_state]).then(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio,  vs_state, agent_state], outputs=[agent_state])
-        make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer]).then(create_client, inputs=[make_vectorstore_radio, make_embedding_radio])
+        delete_collections_button.click(delete_collection, inputs=[vectorstore_client_state, all_collections_state, collections_viewer, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state,select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        get_all_collection_names_button.click(list_collections, inputs=[all_collections_state, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+        get_all_collection_names_button.click(list_collections, inputs=[vectorstore_client_state, all_collections_state, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
         clear_btn.click(clear_chat, inputs = [chatbot, history_state], outputs = [chatbot, history_state])
 
-        make_embedding_radio.change(update_radio, inputs = make_embedding_radio, outputs = select_embedding_radio)
-        select_embedding_radio.change(update_radio, inputs = select_embedding_radio, outputs = make_embedding_radio)
-        make_vectorstore_radio.change(update_radio, inputs =make_vectorstore_radio, outputs = select_vectorstore_radio)
-        select_vectorstore_radio.change(update_radio, inputs = select_vectorstore_radio, outputs = make_vectorstore_radio)
+        make_embedding_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=make_embedding_radio, outputs=[make_embedding_radio, select_embedding_radio]).then(create_client, inputs=[make_vectorstore_radio, make_embedding_radio])
+        select_embedding_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=select_embedding_radio, outputs=[make_embedding_radio, select_embedding_radio]).then(create_client, inputs=[select_vectorstore_radio, select_embedding_radio])
+        make_vectorstore_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=make_vectorstore_radio, outputs=[make_vectorstore_radio, select_vectorstore_radio]).then(create_client, inputs=[make_vectorstore_radio, make_embedding_radio])
+        select_vectorstore_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=select_vectorstore_radio, outputs=[make_vectorstore_radio, select_vectorstore_radio]).then(create_client, inputs=[select_vectorstore_radio, select_embedding_radio])
 
         # Whenever chain parameters change, destroy the agent. 
         input_list = [openai_api_key_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, make_embedding_radio]
@@ -309,7 +315,8 @@ with block:
     gr.HTML(
         "<center>Powered by <a href='https://github.com/hwchase17/langchain'>LangChain 🦜️🔗</a></center>"
     )
-    all_collections_state.value = list_collections(all_collections_state, select_vectorstore_radio, select_embedding_radio)
+
+    all_collections_state.value = list_collections(vectorstore_client_state, all_collections_state, select_vectorstore_radio, select_embedding_radio)
     block.load(read_logs, None, loghtml, every=1)
     block.load(update_checkboxgroup, inputs = all_collections_state, outputs = collections_viewer)
 block.queue(concurrency_count=40)
