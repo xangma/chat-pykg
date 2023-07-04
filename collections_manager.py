@@ -42,7 +42,7 @@ def get_collections(collection_load_names, vs_state, agent_state, vectorstore_ra
     embeddings = []
     vectorstores = []
     if vectorstore_radio == 'Chroma':
-        client = create_vectorstore_client(select_vectorstore_radio, embedding_radio)
+        client = create_vectorstore_client(vectorstore_radio, embedding_radio)
         for collection_name in collection_load_names: 
             collection_obj = Chroma(collection_name=collection_name.replace('/','_'), persist_directory=persist_directory, client=client)
             # collection=client.get_collection(collection_name=collection_name.replace('/','_'),include=["metadatas", "documents", "embeddings"])

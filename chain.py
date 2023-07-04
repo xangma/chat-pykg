@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional, Type, TypeVar
 import gradio as gr
 from langchain import HuggingFaceHub, OpenAI
 from langchain.agents import (AgentType, Tool, initialize_agent, ZeroShotAgent)
-from langchain.callbacks import StdOutCallbackHandler
+from langchain.callbacks import StdOutCallbackHandler, OpenAICallbackHandler
 from langchain.chains import RetrievalQA
 from langchain.chains.base import Chain
 from langchain.chains.conversational_retrieval.prompts import (
@@ -15,9 +15,22 @@ from langchain.memory import (ConversationBufferMemory,
                               ConversationBufferWindowMemory)
 from langchain.prompts.prompt import PromptTemplate
 from langchain.retrievers import SVMRetriever
-
+from langchain.callbacks.base import BaseCallbackHandler
 from ingest import embedding_chooser
 from tools import get_tools
+
+callback_handler = StdOutCallbackHandler()
+oai_callback_handler = OpenAICallbackHandler()
+
+class CustomCallbackHandler(BaseCallbackHandler):
+    """Custom Callback Handler that prints the whole prompt to std out."""
+
+    def on_llm_start(
+        self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any
+    ) -> None:
+        """Print out the whole prompt."""
+        for prompt in prompts:
+            print(prompt)
 
 def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_selector, k_textbox, search_type_selector, max_tokens_textbox) -> Chain:
     if type(embedding_radio) == gr.Radio:
@@ -29,8 +42,8 @@ def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_select
     # Model Selection
     match model_selector:
         case 'gpt-3.5-turbo' | 'gpt-4':
-            agent_llm = ChatOpenAI(client = None, temperature=0.8, model=model_selector, verbose=True, max_tokens=int(max_tokens_textbox))
-            doc_llm = ChatOpenAI(client = None, temperature=0.0, model=model_selector, verbose=True, max_tokens=int(max_tokens_textbox))
+            agent_llm = ChatOpenAI(client = None, temperature=0.8, model=model_selector, verbose=True, max_tokens=int(max_tokens_textbox), callbacks=[CustomCallbackHandler()])
+            doc_llm = ChatOpenAI(client = None, temperature=0.0, model=model_selector, verbose=True, max_tokens=int(max_tokens_textbox),callbacks=[CustomCallbackHandler()])
         case 'other':
             agent_llm = HuggingFaceHub(client = None, repo_id="chavinlo/gpt4-x-alpaca")
             doc_llm = HuggingFaceHub(client = None, repo_id="chavinlo/gpt4-x-alpaca")#, model_kwargs={"temperature":0, "max_length":64})
@@ -106,6 +119,7 @@ def get_new_chain(vectorstores, vectorstore_radio, embedding_radio, model_select
                           llm=agent_llm,
                           verbose=True,
                           memory=memory,
+                          callbacks=[callback_handler, oai_callback_handler]   
                         )
     return ae
 

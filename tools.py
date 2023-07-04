@@ -32,7 +32,7 @@ def get_tools(g_api_key) -> List[Tool]:
         Tool(
         name = 'Python REPL',
         func = python_repl.run,
-        description="useful for when you need to run python commands. Only run python commands when you are asked to - for example to test a small example function. Input should be a fully formed python command."
+        description="useful for when you need to execute python code. Only execute python code when you are asked to by the human. Input should be fully formed python code with no markdown."
         )
     )
     return tools

@@ -13,6 +13,7 @@ from ingest import ingest_docs
 from ansi2html import Ansi2HTMLConverter
 conv = Ansi2HTMLConverter()
 from config import default_vectorstore, default_embedding
+from langchain.callbacks import tracing_enabled
 
 class Logger:
     def __init__(self, filename):
@@ -103,7 +104,7 @@ def set_chain_up(openai_api_key, google_api_key, google_cse_id, model_selector, 
     else:
         return agent
 
-def chat(inp, history, agent):
+def chat(inp, history, agent, tracing_checkbox):
     history = history or []
     if type(agent) == str:
         if agent == 'no_open_aikey':
@@ -113,10 +114,14 @@ def chat(inp, history, agent):
         print("\n==== date/time: " + str(datetime.datetime.now()) + " ====")
         print("inp: " + inp)
         history = history or []
-        output = agent.run({"input": inp, "chat_history": history})
-        answer = output
-        history.append((inp, answer))
-        print(history)
+        if tracing_checkbox == True:
+            with tracing_enabled() as session:
+                assert session
+                output = agent.run({"input": inp, "chat_history": history})
+        else:
+            output = agent.run({"input": inp, "chat_history": history})
+        history.append((inp, output))
+        # print(history)
     return history, history
 
 block = gr.Blocks(title = "chatpykg", analytics_enabled = False, css=".gradio-container {background-color: system;}")
@@ -263,44 +268,48 @@ with block:
                     
                 with gr.Row():
                     gr.HTML('<center>See the <a href=https://python.langchain.com/en/latest/reference/modules/text_splitter.html>Langchain textsplitter docs</a></center>')
-
-        history_state = gr.State()
-        agent_state = gr.State()
-        vs_state = gr.State(value=[])
-        all_collections_state = gr.State(value=[])
-        chat_state = gr.State()
-        debug_state = gr.State()
-        debug_state.value = False
-
-        submit.click(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
-        message.submit(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state], outputs=[chatbot, history_state])
-
-        load_collections_button.click(get_collections, inputs=[collections_viewer, vs_state, agent_state, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state, agent_state]).then(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio,  vs_state, agent_state], outputs=[agent_state])
-        make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state,select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        get_all_collection_names_button.click(list_collections, inputs=[all_collections_state, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
-        clear_btn.click(clear_chat, inputs = [chatbot, history_state], outputs = [chatbot, history_state])
-
-        make_embedding_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=make_embedding_radio, outputs=[make_embedding_radio, select_embedding_radio])
-        select_embedding_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=select_embedding_radio, outputs=[make_embedding_radio, select_embedding_radio])
-        make_vectorstore_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=make_vectorstore_radio, outputs=[make_vectorstore_radio, select_vectorstore_radio])
-        select_vectorstore_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=select_vectorstore_radio, outputs=[make_vectorstore_radio, select_vectorstore_radio])
-
-        # Whenever chain parameters change, destroy the agent. 
-        input_list = [openai_api_key_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, make_embedding_radio]
-        output_list = [agent_state]
-        for input_item in input_list:
-            input_item.change(
-                destroy_state,
-                inputs=output_list,
-                outputs=output_list,
-            )
     
     loghtml = gr.HTML(visible=False)
+    with gr.Row():
+        
+        log_toggle_button = gr.Button("Toggle Log", variant="secondary")
+        tracing_checkbox = gr.Checkbox(label="Enable Tracing", value=False)
+    
+    history_state = gr.State()
+    agent_state = gr.State()
+    vs_state = gr.State(value=[])
+    all_collections_state = gr.State(value=[])
+    chat_state = gr.State()
+    debug_state = gr.State()
+    debug_state.value = False
+
+    submit.click(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state, tracing_checkbox], outputs=[chatbot, history_state])
+    message.submit(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio, vs_state, agent_state], outputs=[agent_state]).then(chat, inputs=[message, history_state, agent_state, tracing_checkbox], outputs=[chatbot, history_state])
+
+    load_collections_button.click(get_collections, inputs=[collections_viewer, vs_state, agent_state, select_vectorstore_radio, select_embedding_radio], outputs=[vs_state, agent_state]).then(set_chain_up, inputs=[openai_api_key_textbox, google_api_key_textbox, google_cse_id_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, select_embedding_radio,  vs_state, agent_state], outputs=[agent_state])
+    make_collections_button.click(ingest_docs, inputs=[all_collections_state, all_collections_to_get, chunk_size_textbox, chunk_overlap_textbox, select_vectorstore_radio, select_embedding_radio, debug_state], outputs=[all_collections_state, all_collections_to_get], show_progress=True).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+    delete_collections_button.click(delete_collection, inputs=[all_collections_state, collections_viewer, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state, collections_viewer]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+    delete_all_collections_button.click(delete_all_collections, inputs=[all_collections_state,select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+    get_all_collection_names_button.click(list_collections, inputs=[all_collections_state, select_vectorstore_radio, select_embedding_radio], outputs=[all_collections_state]).then(update_checkboxgroup, inputs = [all_collections_state], outputs = [collections_viewer])
+    clear_btn.click(clear_chat, inputs = [chatbot, history_state], outputs = [chatbot, history_state])
+
+    make_embedding_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=make_embedding_radio, outputs=[make_embedding_radio, select_embedding_radio])
+    select_embedding_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=select_embedding_radio, outputs=[make_embedding_radio, select_embedding_radio])
+    make_vectorstore_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=make_vectorstore_radio, outputs=[make_vectorstore_radio, select_vectorstore_radio])
+    select_vectorstore_radio.change(fn=lambda value: [gr.update(value=value), gr.update(value=value)], inputs=select_vectorstore_radio, outputs=[make_vectorstore_radio, select_vectorstore_radio])
+
+    # Whenever chain parameters change, destroy the agent. 
+    input_list = [openai_api_key_textbox, model_selector, k_textbox, search_type_selector, max_tokens_textbox, select_vectorstore_radio, make_embedding_radio]
+    output_list = [agent_state]
+    for input_item in input_list:
+        input_item.change(
+            destroy_state,
+            inputs=output_list,
+            outputs=output_list,
+        )
+
     log_textbox_visibility_state = gr.State()
     log_textbox_visibility_state.value = False
-    log_toggle_button = gr.Button("Toggle Log", variant="secondary")
     log_toggle_button.click(toggle_log_textbox, inputs=[log_textbox_visibility_state], outputs=[log_textbox_visibility_state,loghtml])
     
     gr.HTML(
